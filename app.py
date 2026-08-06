@@ -1,3 +1,4 @@
+import io
 import streamlit as st
 from PIL import Image, ImageDraw
 
@@ -21,3 +22,24 @@ if submitted:
     img_width, img_height = 1080, 1080
     card = Image.new("RGB", (img_width, img_height), color=(18, 18, 28))
     draw = ImageDraw.Draw(card)
+    
+    # رسم النصوص على البطاقة
+    draw.text((80, 150), f"Device: {phone_name}", fill=(255, 255, 255))
+    draw.text((80, 300), f"Storage: {storage}", fill=(200, 200, 200))
+    draw.text((80, 450), f"Price: {price}", fill=(0, 255, 150))
+    draw.text((80, 600), f"WhatsApp: {whatsapp}", fill=(255, 255, 255))
+    
+    # عرض الصورة في واجهة Streamlit
+    st.image(card, caption="معاينة بطاقة الإعلان", use_container_width=True)
+    
+    # تجهيز الصورة للتحميل
+    buf = io.BytesIO()
+    card.save(buf, format="PNG")
+    byte_im = buf.getvalue()
+    
+    st.download_button(
+        label="📥 تحميل البطاقة (PNG)",
+        data=byte_im,
+        file_name="ad_card.png",
+        mime="image/png"
+    )
