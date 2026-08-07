@@ -1,13 +1,26 @@
+#==================================
+# استيراد المكتبات الأساسية
+#==================================
 import io
 import streamlit as st
 from PIL import Image, ImageDraw
 
+#==================================
 # إعدادات الصفحة
+#==================================
 st.set_page_config(page_title="Saeed PostGen", page_icon="⚡", layout="centered")
 
 st.markdown("<h2 style='text-align: center; color: #00FFCC;'>⚡ Saeed PostGen - صانع إعلانات المركز الدولي</h2>", unsafe_allow_html=True)
 st.write("أداة مستقلة لتوليد بطاقات إعلانية احترافية للجوالات والأسعار وتجهيزها للنشر الفوري.")
 
+#==================================
+# إعداد متغير مفتاح Gemini API الخاص بهذا المشروع
+#==================================
+GEMINI_API_KEY = st.secrets.get("POSTGEN_GEMINI_KEY", "")
+
+#==================================
+# إعداد واجهة الإدخال عبر النموذج
+#==================================
 with st.form("postgen_form"):
     st.markdown("### أدخل تفاصيل الإعلان:")
     phone_name = st.text_input("اسم الجوال", "Samsung S23 Ultra")
@@ -15,13 +28,16 @@ with st.form("postgen_form"):
     price = st.text_input("السعر", "$500 - 318,000 ريال")
     whatsapp = st.text_input("رقم الواتساب للتواصل", "+967 777...")
     
-    # خيار توليد صورة بالذكاء الاصطناعي
+    # خيار توليد صورة بالذكاء الاصطناعي عبر Gemini
     st.markdown("---")
-    use_ai_image = st.checkbox("توليد صورة احترافية للمنتج عبر DALL-E (اختياري)")
-    openai_api_key = st.text_input("مفتاح OpenAI API", type="password")
+    use_ai_image = st.checkbox("توليد صورة احترافية للمنتج عبر Google Gemini / Imagen (اختياري)")
+    gemini_key_input = st.text_input("مفتاح Gemini API", value=GEMINI_API_KEY, type="password")
     
     submitted = st.form_submit_button("🎨 توليد وتصميم البطاقة الآن")
 
+#==================================
+# معالجة النموذج وتوليد البطاقة
+#==================================
 if submitted:
     # إنشاء لوحة إعلانية مقاس 1080x1080 مناسبة لمنصات التواصل
     img_width, img_height = 1080, 1080
@@ -49,22 +65,25 @@ if submitted:
         mime="image/png"
     )
     
-    # توليد صورة المنتج بالذكاء الاصطناعي إذا تم تفعيل الخيار وإدخال المفتاح
+    #==================================
+    # توليد صورة المنتج عبر Gemini API (Imagen)
+    #==================================
     if use_ai_image:
-        if openai_api_key:
+        active_key = gemini_key_input if gemini_key_input else GEMINI_API_KEY
+        if active_key:
             try:
-                from openai import OpenAI
-                client = OpenAI(api_key=openai_api_key)
-                with st.spinner("جاري توليد صورة المنتج عبر الذكاء الاصطناعي..."):
-                    response = client.images.generate(
-                        model="dall-e-3",
-                        prompt=f"Professional product photography of {phone_name}, white background, high quality",
-                        n=1,
-                        size="1024x1024"
+                from google import genai
+                client = genai.Client(api_key=active_key)
+                with st.spinner("جاري توليد صورة المنتج عبر نموذج الذكاء الاصطناعي من جوجل..."):
+                    response = client.models.generate_images(
+                        model='imagen-3.0-generate-002',
+                        prompt=f"Professional product photography of {phone_name}, white background, high quality studio lighting",
+                        config=dict(number_of_images=1, output_mime_type="image/jpeg")
                     )
-                    image_url = response.data[0].url
-                    st.image(image_url, caption="صورة المنتج المولدة بالذكاء الاصطناعي", use_container_width=True)
+                    for generated_image in response.generated_images:
+                        ai_img = Image.open(io.BytesIO(generated_image.image.image_bytes))
+                        st.image(ai_img, caption="صورة المنتج المولدة عبر Google Gemini / Imagen", use_container_width=True)
             except Exception as e:
-                st.error(f"حدث خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي: {e}")
+                st.error(f"حدث خطأ أثناء الاتصال بـ Gemini API: {e}")
         else:
-            st.warning("يرجى إدخال مفتاح OpenAI API لتوليد الصورة.")
+            st.warning("يرجى إدخال مفتاح Gemini API في إعدادات الأسرار (Streamlit Secrets) أو عبر واجهة الإدخال.")
