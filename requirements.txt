@@ -6,3 +6,4 @@ requests
 google-generativeai
 arabic-reshaper
 python-bidi
+
