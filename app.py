@@ -1,6 +1,8 @@
 # ==========================================
 # Saeed PostGen - أداة متكاملة لتوليد الريلز والصور والموسيقى بالذكاء الاصطناعي
-# نسخة محسّنة: قوالب تصميم، دعم عربي صحيح، معرض صور فعلي، إعدادات فيديو أوسع
+# نسخة محسّنة v2: قوالب تصميم، دعم عربي صحيح، معرض صور فعلي، إعدادات فيديو أوسع
+# + إصلاح نهائي لمشكلة النص فوق الفيديو (رسم بـ PIL بدل TextClip/ImageMagick)
+# + دعم أكثر من صورة في الريلز الواحد (سلايد شو مع سرد صوتي متصل)
 # ==========================================
 import io
 import os
@@ -10,8 +12,11 @@ import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import edge_tts
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, TextClip
-from moviepy.audio.AudioClip import concatenate_audioclips
+from moviepy.editor import (
+    ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
+)
+from moviepy.video.fx.all import crop as mp_crop, loop as mp_loop
+from moviepy.audio.AudioClip import concatenate_audioclips, CompositeAudioClip
 
 # دعم عرض النصوص العربية بشكل صحيح (اتجاه واتصال الحروف)
 try:
@@ -116,6 +121,162 @@ def ar(text):
 
 def draw_rounded_rect(draw, xy, radius, fill):
     draw.rounded_rectangle(xy, radius=radius, fill=fill)
+
+
+def wrap_arabic_text(draw, text, font, max_width):
+    """يقسّم النص العربي (بعد التهيئة) إلى أسطر بحيث لا يتجاوز أي سطر العرض المتاح."""
+    # نلف الكلمات الأصلية (قبل reshape) لأن reshape يجب أن يُطبّق على كل سطر مكتمل
+    words = text.split()
+    lines = []
+    current = []
+    for word in words:
+        trial = current + [word]
+        trial_text = ar(" ".join(trial))
+        bbox = draw.textbbox((0, 0), trial_text, font=font)
+        w = bbox[2] - bbox[0]
+        if w <= max_width or not current:
+            current = trial
+        else:
+            lines.append(" ".join(current))
+            current = [word]
+    if current:
+        lines.append(" ".join(current))
+    return lines
+
+
+def overlay_caption_on_image(base_img: Image.Image, caption: str, accent_color=(251, 191, 36)):
+    """
+    يرسم نصاً عريضاً وواضحاً فوق صورة، بخلفية شبه شفافة وحدود ملونة،
+    بديل كامل عن TextClip الذي يحتاج ImageMagick وغير متاح على الخادم.
+    """
+    img = base_img.convert("RGB").copy()
+    w, h = img.size
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    if not caption:
+        return img
+
+    font_size = max(38, int(w * 0.052))
+    font = get_font(font_size, bold=True)
+    max_text_width = int(w * 0.86)
+
+    lines = wrap_arabic_text(draw, caption, font, max_text_width)
+    # حد أقصى 4 أسطر حتى لا يغطي النص كل الفيديو
+    lines = lines[:4]
+
+    line_height = int(font_size * 1.35)
+    block_height = line_height * len(lines) + 50
+    band_top = h - block_height - 60
+    band_bottom = h - 40
+
+    # خلفية داكنة شبه شفافة لضمان وضوح النص فوق أي صورة
+    draw.rectangle([(0, band_top), (w, band_bottom)], fill=(10, 10, 15, 190))
+    # خط علوي ملون كتوقيع بصري للعلامة
+    draw.rectangle([(0, band_top), (w, band_top + 6)], fill=accent_color + (255,))
+
+    y = band_top + 25
+    for line in lines:
+        display_line = ar(line)
+        bbox = draw.textbbox((0, 0), display_line, font=font)
+        tw = bbox[2] - bbox[0]
+        x = (w - tw) / 2
+        # طبقة outline (تفريغ أسود) لزيادة التباين والوضوح
+        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+            draw.text((x + dx, y + dy), display_line, font=font, fill=(0, 0, 0, 255))
+        draw.text((x, y), display_line, font=font, fill=(255, 255, 255, 255))
+        y += line_height
+
+    return img
+
+
+def render_transparent_caption_band(size, caption: str, accent_color=(251, 191, 36)):
+    """
+    يبني صورة PNG شفافة (RGBA) بنفس أبعاد الفيديو، وفيها فقط شريط النص السفلي.
+    تُستخدم كطبقة (overlay) توضع فوق فيديو حقيقي بدون التأثير على محتوى الفيديو نفسه.
+    """
+    w, h = size
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    if not caption:
+        return overlay
+
+    draw = ImageDraw.Draw(overlay, "RGBA")
+    font_size = max(38, int(w * 0.052))
+    font = get_font(font_size, bold=True)
+    max_text_width = int(w * 0.86)
+
+    lines = wrap_arabic_text(draw, caption, font, max_text_width)
+    lines = lines[:4]
+
+    line_height = int(font_size * 1.35)
+    block_height = line_height * len(lines) + 50
+    band_top = h - block_height - 60
+    band_bottom = h - 40
+
+    draw.rectangle([(0, band_top), (w, band_bottom)], fill=(10, 10, 15, 190))
+    draw.rectangle([(0, band_top), (w, band_top + 6)], fill=accent_color + (255,))
+
+    y = band_top + 25
+    for line in lines:
+        display_line = ar(line)
+        bbox = draw.textbbox((0, 0), display_line, font=font)
+        tw = bbox[2] - bbox[0]
+        x = (w - tw) / 2
+        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+            draw.text((x + dx, y + dy), display_line, font=font, fill=(0, 0, 0, 255))
+        draw.text((x, y), display_line, font=font, fill=(255, 255, 255, 255))
+        y += line_height
+
+    return overlay
+
+
+def fit_video_to_canvas(video_clip, target_size):
+    """
+    يلائم فيديو مرفوع (زي فيديوهات دوران المنتج) داخل أبعاد الريلز المطلوبة،
+    عبر تكبير الفيديو حتى يغطي الإطار بالكامل ثم قص الزيادة من المنتصف (بدون تشويه النسب).
+    """
+    target_w, target_h = target_size
+    clip_w, clip_h = video_clip.w, video_clip.h
+
+    target_ratio = target_w / target_h
+    clip_ratio = clip_w / clip_h
+
+    if clip_ratio > target_ratio:
+        # الفيديو أعرض من المطلوب: نكبّر حسب الارتفاع ثم نقص الجوانب
+        resized = video_clip.resize(height=target_h)
+    else:
+        # الفيديو أطول من المطلوب: نكبّر حسب العرض ثم نقص الأعلى والأسفل
+        resized = video_clip.resize(width=target_w)
+
+    resized_w, resized_h = resized.w, resized.h
+    x_center = resized_w / 2
+    y_center = resized_h / 2
+
+    cropped = mp_crop(
+        resized,
+        width=min(target_w, resized_w),
+        height=min(target_h, resized_h),
+        x_center=x_center,
+        y_center=y_center,
+    )
+    # ضبط أخير للمقاس بالضبط تحسباً لفروق تقريب بسيطة
+    return cropped.resize(newsize=target_size)
+
+
+def fit_image_to_canvas(image_to_use: Image.Image, target_size):
+    """يلائم الصورة داخل الإطار المطلوب مع خلفية معتّمة خلفها إن كانت الأبعاد عمودية."""
+    image_to_use = image_to_use.convert("RGB")
+    if image_to_use.size == target_size:
+        return image_to_use.copy()
+
+    if target_size[1] > target_size[0]:  # عمودي
+        bg = image_to_use.resize(target_size).filter(ImageFilter.GaussianBlur(20))
+        fitted = image_to_use.copy()
+        fitted.thumbnail((target_size[0], target_size[0]))
+        canvas = bg.copy()
+        canvas.paste(fitted, ((target_size[0] - fitted.width) // 2, (target_size[1] - fitted.height) // 2))
+        return canvas
+    else:
+        return image_to_use.resize(target_size)
 
 
 def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, logo_img=None):
@@ -243,12 +404,15 @@ with tab1:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# التبويب الثاني: توليد ريلز
+# التبويب الثاني: توليد ريلز (نسخة محسّنة: عدة صور + نص مضمون الظهور)
 # ==========================================
 with tab2:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("🎥 توليد ريلز احترافية")
-    st.markdown("أنشئ فيديو قصير يجمع بين صورة المنتج، تعليق صوتي، وموسيقى خلفية.")
+    st.markdown(
+        "أنشئ فيديو قصير من صورة واحدة أو عدة صور، أو من فيديو جاهز ترفعه (مثل فيديو دوران المنتج)، "
+        "مع تعليق صوتي فصيح وموسيقى خلفية، والنص يظهر بخط عريض وواضح فوق المحتوى."
+    )
 
     VOICES = {
         "رجالي - سعودي (حامد)": "ar-SA-HamedNeural",
@@ -259,22 +423,37 @@ with tab2:
 
     with st.form("reel_form"):
         script_text = st.text_area(
-            "النص التعليقي (سيُقرأ في الفيديو)",
+            "النص التعليقي الكامل (سيُقرأ في الفيديو)",
             "مرحباً بكم في متجرنا، نقدم لكم أفضل العروض على الجوالات الحديثة. تواصلوا معنا الآن واحصلوا على خصم خاص."
+        )
+
+        uploaded_video = st.file_uploader(
+            "🎬 (اختياري) ارفع فيديو جاهز للمنتج (مثل فيديو دوران 360) ليُستخدم كخلفية بدل الصور",
+            type=["mp4", "mov", "m4v"],
+        )
+
+        uploaded_images = st.file_uploader(
+            "أو ارفع صورة واحدة أو عدة صور للمنتج (سيتم عرضها بالتتابع كسلايد شو) - يُتجاهل إذا رفعت فيديو أعلاه",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
         )
 
         col1, col2 = st.columns(2)
         with col1:
-            uploaded_image = st.file_uploader("ارفع صورة المنتج (اختياري)", type=["jpg", "jpeg", "png"])
             voice_label = st.selectbox("الصوت", list(VOICES.keys()))
+            use_generated_image = st.checkbox("استخدام صورة البطاقة الأخيرة إن لم أرفع صوراً")
         with col2:
-            use_generated_image = st.checkbox("استخدام صورة مولدة من البطاقة السابقة (إن وجدت)")
             aspect = st.selectbox("أبعاد الفيديو", ["عمودي 9:16 (ريلز/ستوري)", "مربع 1:1"])
+            add_text_overlay = st.checkbox("إضافة نص واضح فوق الفيديو", value=True)
 
         background_music = st.file_uploader("ارفع موسيقى خلفية (MP3) - اختياري", type=["mp3"])
         music_volume = st.slider("مستوى صوت الموسيقى", 0.0, 1.0, 0.3)
-        duration = st.slider("مدة الفيديو (بالثواني)", 5, 30, 10)
-        add_text_overlay = st.checkbox("إضافة نص توضيحي على الفيديو", value=True)
+        duration = st.slider("إجمالي مدة الفيديو (بالثواني)", 5, 60, 14)
+
+        overlay_caption = st.text_input(
+            "النص الذي يظهر فوق الصور (اتركه فارغاً لاستخدام أول جملة من النص التعليقي)",
+            ""
+        )
 
         generate_reel = st.form_submit_button("🚀 توليد الريلز الآن")
 
@@ -285,7 +464,7 @@ with tab2:
             temp_files = []
             try:
                 with st.spinner("⏳ جاري تحضير الريلز... قد يستغرق هذا دقيقة."):
-                    # 1. توليد الصوت
+                    # 1. توليد الصوت الكامل (فصيح عبر Edge-TTS)
                     voice = VOICES[voice_label]
                     temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
                     temp_files.append(temp_audio_path)
@@ -296,36 +475,6 @@ with tab2:
 
                     asyncio.run(generate_audio())
 
-                    # 2. تحديد الصورة وضبط الأبعاد
-                    if uploaded_image is not None:
-                        image_to_use = Image.open(uploaded_image)
-                    elif use_generated_image and st.session_state["last_ad_card"] is not None:
-                        image_to_use = st.session_state["last_ad_card"]
-                    else:
-                        image_to_use = Image.new("RGB", (1080, 1080), color=(30, 30, 50))
-
-                    image_to_use = image_to_use.convert("RGB")
-                    if aspect.startswith("عمودي"):
-                        target_size = (1080, 1920)
-                    else:
-                        target_size = (1080, 1080)
-
-                    # يلائم الصورة داخل الإطار المطلوب مع خلفية معتّمة خلفها
-                    canvas = image_to_use.resize(target_size) if image_to_use.size != target_size else image_to_use
-                    if aspect.startswith("عمودي"):
-                        bg = image_to_use.resize(target_size).filter(ImageFilter.GaussianBlur(20))
-                        fitted = image_to_use.copy()
-                        fitted.thumbnail((target_size[0], target_size[0]))
-                        canvas = bg.copy()
-                        canvas.paste(fitted, ((target_size[0] - fitted.width) // 2, (target_size[1] - fitted.height) // 2))
-
-                    temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
-                    temp_files.append(temp_img_path)
-                    canvas.save(temp_img_path)
-
-                    # 3. بناء الفيديو
-                    img_clip = ImageClip(temp_img_path).set_duration(duration)
-
                     audio_clip = AudioFileClip(temp_audio_path)
                     if audio_clip.duration < duration:
                         repeats = int(duration // audio_clip.duration) + 1
@@ -333,6 +482,80 @@ with tab2:
                     else:
                         audio_clip = audio_clip.subclip(0, duration)
 
+                    target_size = (1080, 1920) if aspect.startswith("عمودي") else (1080, 1080)
+
+                    # النص الظاهر فوق الفيديو/الصور
+                    caption = overlay_caption.strip()
+                    if not caption:
+                        first_sentence = script_text.strip().split(".")[0]
+                        caption = first_sentence[:90]
+
+                    if uploaded_video is not None:
+                        # ==========================================
+                        # المسار الجديد: استخدام فيديو مرفوع جاهز كخلفية
+                        # (مثل فيديوهات دوران المنتج 360) + رسم النص كطبقة شفافة فوقه
+                        # ==========================================
+                        temp_src_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+                        temp_files.append(temp_src_video_path)
+                        with open(temp_src_video_path, "wb") as f:
+                            f.write(uploaded_video.read())
+
+                        raw_video_clip = VideoFileClip(temp_src_video_path)
+
+                        # تمديد الفيديو (تكرار) إذا كان أقصر من المدة المطلوبة، أو قصّه إذا كان أطول
+                        if raw_video_clip.duration < duration:
+                            raw_video_clip = mp_loop(raw_video_clip, duration=duration)
+                        else:
+                            raw_video_clip = raw_video_clip.subclip(0, duration)
+
+                        base_video_clip = fit_video_to_canvas(raw_video_clip, target_size)
+                        # إزالة الصوت الأصلي للفيديو المرفوع (سيُستبدل بالتعليق الصوتي المولّد)
+                        base_video_clip = base_video_clip.without_audio()
+
+                        if add_text_overlay:
+                            text_overlay_img = render_transparent_caption_band(target_size, caption)
+                            temp_overlay_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                            temp_files.append(temp_overlay_path)
+                            text_overlay_img.save(temp_overlay_path)
+
+                            text_clip = ImageClip(temp_overlay_path, transparent=True).set_duration(duration)
+                            video_clip = CompositeVideoClip([base_video_clip, text_clip], size=target_size)
+                        else:
+                            video_clip = base_video_clip
+
+                        video_clip = video_clip.set_duration(duration)
+
+                    else:
+                        # ==========================================
+                        # المسار الأصلي (كما كان): سلايد شو من صورة أو عدة صور
+                        # ==========================================
+                        images_list = []
+                        if uploaded_images:
+                            for f in uploaded_images:
+                                images_list.append(Image.open(f))
+                        elif use_generated_image and st.session_state["last_ad_card"] is not None:
+                            images_list.append(st.session_state["last_ad_card"])
+                        else:
+                            images_list.append(Image.new("RGB", (1080, 1080), color=(30, 30, 50)))
+
+                        # بناء مقطع فيديو لكل صورة بمدة متساوية من إجمالي المدة
+                        per_image_duration = duration / len(images_list)
+                        video_segments = []
+                        for idx, raw_img in enumerate(images_list):
+                            canvas = fit_image_to_canvas(raw_img, target_size)
+                            if add_text_overlay:
+                                canvas = overlay_caption_on_image(canvas, caption)
+
+                            temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                            temp_files.append(temp_img_path)
+                            canvas.save(temp_img_path)
+
+                            clip = ImageClip(temp_img_path).set_duration(per_image_duration)
+                            video_segments.append(clip)
+
+                        video_clip = concatenate_videoclips(video_segments, method="compose") if len(video_segments) > 1 else video_segments[0]
+
+                    # 5. دمج الموسيقى مع الصوت إن وُجدت
                     if background_music is not None:
                         temp_music_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
                         temp_files.append(temp_music_path)
@@ -344,33 +567,17 @@ with tab2:
                             music_clip = concatenate_audioclips([music_clip] * reps).subclip(0, duration)
                         else:
                             music_clip = music_clip.subclip(0, duration)
-                        final_audio = CompositeVideoClip([img_clip]).set_audio(audio_clip).audio
-                        # دمج الصوتين عبر CompositeAudioClip الصحيح
-                        from moviepy.audio.AudioClip import CompositeAudioClip
                         final_audio = CompositeAudioClip([audio_clip, music_clip])
                     else:
                         final_audio = audio_clip
 
-                    video_clip = img_clip.set_audio(final_audio)
-
-                    if add_text_overlay:
-                        try:
-                            txt_clip = TextClip(
-                                script_text[:60] + ("..." if len(script_text) > 60 else ""),
-                                fontsize=40, color='white', method='caption',
-                                size=(target_size[0] - 120, None), stroke_color='black', stroke_width=2
-                            )
-                            txt_clip = txt_clip.set_position(('center', 0.85), relative=True).set_duration(duration)
-                            video_clip = CompositeVideoClip([video_clip, txt_clip])
-                        except Exception:
-                            # في حال عدم توفر خط ImageMagick على الخادم، نتجاهل النص بدل فشل كامل العملية
-                            st.warning("تعذّر إضافة النص فوق الفيديو (مشكلة خطوط على الخادم)، تم إنشاء الفيديو بدونه.")
+                    video_clip = video_clip.set_audio(final_audio)
 
                     output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
                     temp_files.append(output_path)
                     video_clip.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', logger=None)
 
-                st.success("✅ تم توليد الريلز بنجاح!")
+                st.success("✅ تم توليد الريلز بنجاح، والنص ظاهر بوضوح فوق الفيديو!")
                 st.video(output_path)
 
                 with open(output_path, "rb") as f:
