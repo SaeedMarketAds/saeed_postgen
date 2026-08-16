@@ -4,3 +4,5 @@ edge-tts
 moviepy
 requests
 google-generativeai
+arabic-reshaper
+python-bidi
