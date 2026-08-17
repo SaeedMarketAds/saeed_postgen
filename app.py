@@ -59,7 +59,8 @@ FONT_SEARCH_PATHS_REGULAR = [
     "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
 ]
 
-_ARABIC_FONT_STATUS = {"checked": False, "ok": False, "path": None}
+# تعريف حالة الخط العربي في الأعلى لتجنب خطأ NameError
+_ARAB_FONT_STATUS = {"checked": False, "ok": False, "path": None}
 
 
 def _font_supports_arabic(font_obj) -> bool:
