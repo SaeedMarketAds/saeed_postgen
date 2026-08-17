@@ -1,9 +1,8 @@
 streamlit
+google-generativeai
 Pillow
+arabic-reshaper
+python-bidi
 edge-tts
 moviepy
 requests
-google-generativeai
-arabic-reshaper
-python-bidi
-
