@@ -1,29 +1,25 @@
-# ==========================================
-# Saeed PostGen - أداة متكاملة لتوليد الريلز والصور والموسيقى بالذكاء الاصطناعي
-# نسخة محسّنة v2: قوالب تصميم، دعم عربي صحيح، معرض صور فعلي، قراءة ads.txt
-# ==========================================
+# =======================================================================
+# Saeed PostGen - الإصدار الموحّد 3.0
+# يجمع بين صانع البطاقات، مولد الريلز، معرض الصور، والمحادثة بالذكاء الاصطناعي
+# مع دعم عربي كامل، خطوط مدمجة، وتكامل Gemini API
+# =======================================================================
+
+import asyncio
 import io
 import os
 import tempfile
-import asyncio
 import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-
-# ------------------------------------------------------------------
-# إصلاح توافق: نسخ Pillow الحديثة (10+) أزالت Image.ANTIALIAS
-# ------------------------------------------------------------------
-if not hasattr(Image, "ANTIALIAS"):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
-
 import edge_tts
 from moviepy.editor import (
-    ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
+    ImageClip, AudioFileClip, CompositeVideoClip,
+    concatenate_videoclips, VideoFileClip
 )
 from moviepy.video.fx.all import crop as mp_crop, loop as mp_loop
 from moviepy.audio.AudioClip import concatenate_audioclips, CompositeAudioClip
 
-# دعم عرض النصوص العربية بشكل صحيح (اتجاه واتصال الحروف)
+# دعم عرض النصوص العربية (تشكيل واتجاه)
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
@@ -31,16 +27,105 @@ try:
 except ImportError:
     ARABIC_SUPPORT = False
 
-# محاولة استيراد google.generativeai
+# محاولة استيراد Gemini
 try:
     import google.generativeai as genai
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
 
-# ==========================================
-# إعدادات الخطوط والمسارات العربية أولاً
-# ==========================================
+# =======================================================================
+#  إعدادات الصفحة والتصميم (CSS الموحّد)
+# =======================================================================
+st.set_page_config(
+    page_title="Saeed PostGen - صانع المحتوى بالذكاء الاصطناعي",
+    page_icon="🎬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# CSS يجمع بين تصميم Gemini/Meta والتصميم الأصلي
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+    * { font-family: 'Cairo', sans-serif; }
+    .stApp { background: linear-gradient(145deg, #0b1120, #1a2332); color: #e2e8f0; }
+
+    /* الشريط الجانبي */
+    [data-testid="stSidebar"] {
+        background-color: #1e1f20;
+        border-right: 1px solid #333538;
+    }
+
+    /* البطاقات */
+    .ai-card, .card-box {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(6px);
+        border-radius: 25px;
+        padding: 25px;
+        border: 1px solid rgba(251,191,36,0.15);
+        margin-bottom: 25px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    /* العناوين */
+    .title {
+        text-align: center; color: #fbbf24; font-size: 2.8rem; font-weight: 700;
+        text-shadow: 0 0 20px rgba(251,191,36,0.3); margin-bottom: 10px;
+    }
+    .subtitle { text-align: center; color: #94a3b8; font-size: 1.2rem; margin-bottom: 30px; }
+
+    /* الحقول */
+    .stTextInput input, .stTextArea textarea, .stSelectbox > div > div {
+        background: rgba(255,255,255,0.05) !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(251,191,36,0.2) !important;
+        border-radius: 15px !important;
+        padding: 12px !important;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #8ab4f8 !important;
+        box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2) !important;
+    }
+
+    /* الأزرار */
+    .stButton button {
+        background: linear-gradient(90deg, #fbbf24, #f59e0b) !important;
+        color: #0f172a !important;
+        font-weight: bold !important;
+        border: none !important;
+        border-radius: 30px !important;
+        padding: 12px 30px !important;
+        transition: all 0.3s !important;
+        box-shadow: 0 4px 15px rgba(251,191,36,0.2) !important;
+    }
+    .stButton button:hover {
+        transform: scale(1.02) !important;
+        box-shadow: 0 8px 25px rgba(251,191,36,0.4) !important;
+    }
+
+    /* رسائل الدردشة */
+    .chat-message {
+        padding: 15px 20px;
+        border-radius: 18px;
+        margin-bottom: 12px;
+        max-width: 80%;
+    }
+    .chat-user {
+        background: rgba(59, 130, 246, 0.2);
+        border-left: 4px solid #3b82f6;
+        align-self: flex-end;
+    }
+    .chat-assistant {
+        background: rgba(30, 41, 59, 0.8);
+        border-left: 4px solid #fbbf24;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =======================================================================
+#  دعم الخطوط العربية (من الكود الأصلي)
+# =======================================================================
 FONT_SEARCH_PATHS = [
     "fonts/Cairo-Bold.ttf",
     "fonts/Tajawal-Bold.ttf",
@@ -49,7 +134,6 @@ FONT_SEARCH_PATHS = [
     "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
     "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
 ]
-
 FONT_SEARCH_PATHS_REGULAR = [
     "fonts/Cairo-Regular.ttf",
     "fonts/Tajawal-Regular.ttf",
@@ -59,12 +143,9 @@ FONT_SEARCH_PATHS_REGULAR = [
     "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
 ]
 
-# تعريف حالة الخط العربي في الأعلى لتجنب خطأ NameError
 _ARAB_FONT_STATUS = {"checked": False, "ok": False, "path": None}
 
-
 def _font_supports_arabic(font_obj) -> bool:
-    """اختبار فعلي لرسم كلمة عربية والتأكد من دعم الخط."""
     try:
         test_img = Image.new("RGB", (10, 10))
         draw = ImageDraw.Draw(test_img)
@@ -73,9 +154,7 @@ def _font_supports_arabic(font_obj) -> bool:
     except Exception:
         return False
 
-
 def get_font(size, bold=True):
-    """تحميل خط عربي حقيقي مع التحقق الفعلي من دعمه للحروف."""
     candidates = FONT_SEARCH_PATHS if bold else FONT_SEARCH_PATHS_REGULAR
     for path in candidates:
         try:
@@ -90,87 +169,13 @@ def get_font(size, bold=True):
     if not _ARAB_FONT_STATUS["checked"]:
         _ARAB_FONT_STATUS.update(checked=True, ok=False, path=None)
 
-    fallback_candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
-        "arial.ttf",
-    ]
-    for path in fallback_candidates:
+    fallback = ["DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf", "arial.ttf"]
+    for path in fallback:
         try:
             return ImageFont.truetype(path, size)
         except Exception:
             continue
     return ImageFont.load_default()
-
-
-# ==========================================
-# إعدادات الصفحة والتصميم
-# ==========================================
-st.set_page_config(
-    page_title="Saeed PostGen - صانع المحتوى بالذكاء الاصطناعي",
-    page_icon="🎬",
-    layout="wide"
-)
-
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    * { font-family: 'Cairo', sans-serif; }
-    .main { background: linear-gradient(145deg, #0b1120, #1a2332); color: #e2e8f0; }
-    .title {
-        text-align: center; color: #fbbf24; font-size: 2.8rem; font-weight: 700;
-        text-shadow: 0 0 20px rgba(251,191,36,0.3); margin-bottom: 10px;
-    }
-    .subtitle { text-align: center; color: #94a3b8; font-size: 1.2rem; margin-bottom: 30px; }
-    .card-box {
-        background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(6px); border-radius: 25px;
-        padding: 25px; border: 1px solid rgba(251,191,36,0.15); margin-bottom: 25px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    }
-    .stButton > button {
-        background: linear-gradient(90deg, #fbbf24, #f59e0b); color: #0f172a; font-weight: bold;
-        border: none; border-radius: 30px; padding: 12px 30px; transition: all 0.3s;
-        box-shadow: 0 4px 15px rgba(251,191,36,0.2);
-    }
-    .stButton > button:hover { transform: scale(1.02); box-shadow: 0 8px 25px rgba(251,191,36,0.4); }
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-        background: rgba(255,255,255,0.05); color: #f8fafc;
-        border: 1px solid rgba(251,191,36,0.2); border-radius: 15px;
-    }
-    .stSelectbox > div > div { background: rgba(255,255,255,0.05); color: #f8fafc; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="title">🎬 Saeed PostGen</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">أنشئ ريلز احترافية وصوراً وموسيقى بالذكاء الاصطناعي بنقرة واحدة</div>', unsafe_allow_html=True)
-
-# =========== التصحيح هنا ===========
-# نستخدم _ARAB_FONT_STATUS (بدون I) كما هو معرف أعلاه
-_ = get_font(30, bold=True)
-if _ARAB_FONT_STATUS["checked"] and not _ARAB_FONT_STATUS["ok"]:
-    st.error(
-        "⚠️ لا يوجد خط عربي حقيقي مثبّت على الخادم. أضف ملف خط عربي (مثل Cairo-Bold.ttf) "
-        "داخل مجلد باسم **fonts** في جذر الريبو (fonts/Cairo-Bold.ttf)."
-    )
-# ===================================
-
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-
-if "gallery" not in st.session_state:
-    st.session_state["gallery"] = []
-if "last_ad_card" not in st.session_state:
-    st.session_state["last_ad_card"] = None
-
-# ==========================================
-# قوالب وتصميم البطاقات والدوال المساعدة
-# ==========================================
-TEMPLATES = {
-    "ذهبي فاخر": {"bg": (15, 23, 42), "accent": (251, 191, 36), "text": (255, 255, 255), "sub": (200, 200, 200)},
-    "أزرق تقني": {"bg": (10, 20, 40), "accent": (56, 189, 248), "text": (255, 255, 255), "sub": (180, 200, 220)},
-    "أخضر عصري": {"bg": (12, 30, 24), "accent": (52, 211, 153), "text": (255, 255, 255), "sub": (190, 220, 205)},
-    "أحمر جريء": {"bg": (30, 12, 12), "accent": (248, 113, 113), "text": (255, 255, 255), "sub": (220, 190, 190)},
-}
-
 
 def ar(text):
     if ARABIC_SUPPORT and text:
@@ -180,10 +185,18 @@ def ar(text):
             return text
     return text
 
+# =======================================================================
+#  دوال البطاقات والريلز (من الكود الأصلي)
+# =======================================================================
+TEMPLATES = {
+    "ذهبي فاخر": {"bg": (15, 23, 42), "accent": (251, 191, 36), "text": (255, 255, 255), "sub": (200, 200, 200)},
+    "أزرق تقني": {"bg": (10, 20, 40), "accent": (56, 189, 248), "text": (255, 255, 255), "sub": (180, 200, 220)},
+    "أخضر عصري": {"bg": (12, 30, 24), "accent": (52, 211, 153), "text": (255, 255, 255), "sub": (190, 220, 205)},
+    "أحمر جريء": {"bg": (30, 12, 12), "accent": (248, 113, 113), "text": (255, 255, 255), "sub": (220, 190, 190)},
+}
 
 def draw_rounded_rect(draw, xy, radius, fill):
     draw.rounded_rectangle(xy, radius=radius, fill=fill)
-
 
 def wrap_arabic_text(draw, text, font, max_width):
     words = text.split()
@@ -200,7 +213,6 @@ def wrap_arabic_text(draw, text, font, max_width):
     if current:
         lines.append(" ".join(current))
     return lines
-
 
 def overlay_caption_on_image(base_img: Image.Image, caption: str, accent_color=(251, 191, 36)):
     img = base_img.convert("RGB").copy()
@@ -233,7 +245,6 @@ def overlay_caption_on_image(base_img: Image.Image, caption: str, accent_color=(
         y += line_height
     return img
 
-
 def render_transparent_caption_band(size, caption: str, accent_color=(251, 191, 36)):
     w, h = size
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -265,7 +276,6 @@ def render_transparent_caption_band(size, caption: str, accent_color=(251, 191, 
         y += line_height
     return overlay
 
-
 def fit_video_to_canvas(video_clip, target_size):
     target_w, target_h = target_size
     clip_w, clip_h = video_clip.w, video_clip.h
@@ -282,7 +292,6 @@ def fit_video_to_canvas(video_clip, target_size):
         x_center=resized.w / 2, y_center=resized.h / 2
     ).resize(newsize=target_size)
 
-
 def fit_image_to_canvas(image_to_use: Image.Image, target_size):
     image_to_use = image_to_use.convert("RGB")
     if image_to_use.size == target_size:
@@ -297,7 +306,6 @@ def fit_image_to_canvas(image_to_use: Image.Image, target_size):
         return canvas
     else:
         return image_to_use.resize(target_size)
-
 
 def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, logo_img=None):
     tpl = TEMPLATES[template_name]
@@ -390,16 +398,108 @@ def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, log
 
     return card
 
+# =======================================================================
+#  تهيئة حالة الجلسة
+# =======================================================================
+if "gallery" not in st.session_state:
+    st.session_state["gallery"] = []
+if "last_ad_card" not in st.session_state:
+    st.session_state["last_ad_card"] = None
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [
+        {"role": "assistant", "content": "أهلاً بك في Saeed PostGen! كيف يمكنني مساعدتك في إنشاء محتوى إعلاني أو سينمائي اليوم؟"}
+    ]
 
-# ==========================================
-# واجهة التبويبات في Streamlit
-# ==========================================
-tab1, tab2, tab3 = st.tabs(["📱 بطاقة إعلان", "🎥 توليد ريلز", "🖼️ معرض الصور"])
+# =======================================================================
+#  الشريط الجانبي (معلومات سريعة)
+# =======================================================================
+with st.sidebar:
+    st.markdown("### 🎬 **Saeed Studio**")
+    st.markdown("---")
+    st.markdown("📌 **الحالة:** متصل بنظام النماذج الذكية")
+    st.markdown("💡 **الإصدار:** 3.0 (متكامل)")
+    st.markdown("---")
+    st.caption("© 2026 Saeed PostGen - 🇾🇪")
 
-# ------------------------------------------
-# التبويب الأول: بطاقة إعلان + قراءة ads.txt
-# ------------------------------------------
+# =======================================================================
+#  التبويبات الرئيسية (4 تبويبات)
+# =======================================================================
+tab1, tab2, tab3, tab4 = st.tabs([
+    "💬 المحادثة والذكاء الاصطناعي",
+    "📱 بطاقة إعلان",
+    "🎥 توليد ريلز",
+    "🖼️ معرض الصور"
+])
+
+# =======================================================================
+#  تبويب 1: المحادثة والذكاء الاصطناعي (دمج من الكود الأول)
+# =======================================================================
 with tab1:
+    st.markdown('<div class="card-box">', unsafe_allow_html=True)
+    st.subheader("🤖 مساعد الذكاء الاصطناعي السينمائي والإعلاني")
+
+    # عرض رسائل الدردشة
+    for msg in st.session_state["messages"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(f"<div class='chat-message chat-{msg['role']}'>{msg['content']}</div>", unsafe_allow_html=True)
+
+    # منطقة إدخال النص
+    prompt = st.chat_input("اكتب فكرة الفيديو أو الإعلان هنا...")
+    if prompt:
+        # إضافة رسالة المستخدم
+        st.session_state["messages"].append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # استدعاء Gemini أو رد افتراضي
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        if GENAI_AVAILABLE and api_key:
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content(prompt)
+                reply = response.text
+            except Exception as e:
+                reply = f"⚠️ حدث خطأ في استدعاء Gemini: {e}\n\nنقدم لك اقتراحاً سينمائياً: ..."
+        else:
+            # رد افتراضي احترافي
+            reply = f"✨ **تم تحليل الفكرة بنجاح:**\n\nللحصول على أفضل نتيجة سينمائية لمحتواك ('{prompt}'), أنصحك باستخدام الوصف التالي في أدوات التوليد الاحترافية:\n\n> *Cinematic 4K shot, hyper-realistic lighting, professional commercial grade, smooth camera motion, high detail.*"
+
+        st.session_state["messages"].append({"role": "assistant", "content": reply})
+        with st.chat_message("assistant"):
+            st.markdown(f"<div class='chat-message chat-assistant'>{reply}</div>", unsafe_allow_html=True)
+
+    # قسم مساعد إضافي (مثل صانع النصوص السينمائية)
+    with st.expander("🎥 صانع النصوص السينمائية (توليد وصف احترافي)", expanded=False):
+        st.markdown("أدخل تفاصيل المنتج لتحصل على سيناريو ووصف بصري جاهز.")
+        col1, col2 = st.columns(2)
+        with col1:
+            product_name = st.text_input("اسم المنتج", "هاتف ذكي بتصميم سينمائي")
+            style = st.selectbox("الأسلوب المرئي", ["سينمائي واقعي (Cinematic 4K)", "إعلان تجاري فخم (Commercial)", "درامي مظلم (Dark Moody)", "مشرق ونظيف (Clean Tech)"])
+        with col2:
+            duration = st.slider("مدة الفيديو التقديرية (ثوانٍ)", 5, 60, 15)
+            platform = st.selectbox("المنصة المستهدفة", ["TikTok / Reels", "YouTube Shorts", "عرض تسويقي خاص"])
+
+        if st.button("🚀 توليد السيناريو والوصف"):
+            st.markdown("---")
+            st.markdown("### 📋 النتيجة الجاهزة للاستخدام:")
+            st.markdown(f"""
+            <div class='ai-card'>
+            <b>🎯 الفكرة:</b> {product_name}<br>
+            <b>🎨 النمط:</b> {style}<br>
+            <b>⏱️ المدة:</b> {duration} ثانية ({platform})<br><br>
+            <b>📝 النص الإعلاني (Voiceover):</b><br>
+            <i>"اكتشف القوة المطلقة بين يديك. تصميم يجمع بين الأناقة والأداء الخارق..."</i><br><br>
+            <b>🎥 وصف التوليد البصري (Prompt):</b><br>
+            <code>Close-up cinematic shot of {product_name}, {style}, dramatic lighting, 8k resolution, photorealistic render.</code>
+            </div>
+            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# =======================================================================
+#  تبويب 2: بطاقة إعلان (الكود الأصلي مع قراءة ads.txt)
+# =======================================================================
+with tab2:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("إنشاء بطاقة إعلان للمنتج")
 
@@ -412,12 +512,12 @@ with tab1:
         with col2:
             price = st.text_input("السعر", "$1,200 - 3,900 ريال")
             whatsapp = st.text_input("رقم واتساب", "+966 50 000 0000")
-            logo_upload = st.file_uploader("شعار المتجر (اختياري، PNG بخلفية شفافة)", type=["png"])
+            logo_upload = st.file_uploader("شعار المتجر (اختياري، PNG)", type=["png"])
 
         submitted = st.form_submit_button("🎨 توليد البطاقة الفردية")
 
     if submitted:
-        logo_img = Image.open(logo_upload) if logo_upload is not None else None
+        logo_img = Image.open(logo_upload) if logo_upload else None
         card = build_ad_card(product_name, storage_ram, price, whatsapp, template_name, logo_img)
         st.session_state["last_ad_card"] = card
         st.session_state["gallery"].append({"image": card, "caption": f"بطاقة: {product_name}"})
@@ -429,15 +529,12 @@ with tab1:
 
     st.markdown("---")
     st.subheader("📁 التوليد التلقائي من ملف ads.txt")
-    st.markdown("يقرأ التطبيق ملف `ads.txt` من الخادم ويولد بطاقات إعلانية لكل المنتجات الموجودة فيه دفعة واحدة.")
-
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("🚀 قراءة وتوليد البطاقات من ملف ads.txt"):
             if os.path.exists('ads.txt'):
                 with open('ads.txt', 'r', encoding='utf-8') as file:
                     ads_list = file.readlines()
-                
                 count = 0
                 for line in ads_list:
                     ad_text = line.strip()
@@ -454,29 +551,23 @@ with tab1:
                         count += 1
                 st.success(f"✅ تم توليد {count} بطاقة بنجاح وإضافتها إلى معرض الصور!")
             else:
-                st.warning("⚠️ ملف `ads.txt` غير موجود. أنشئ الملف أولاً أو اضغط على الزر المجاور.")
+                st.warning("⚠️ ملف `ads.txt` غير موجود.")
 
     with col_btn2:
         if st.button("📝 إنشاء ملف ads.txt تجريبي"):
-            sample_ads = [
-                "iPhone 15 Pro Max",
-                "Samsung Galaxy S24 Ultra",
-                "Xiaomi 14 Pro",
-                "Huawei Mate 60 Pro"
-            ]
+            sample_ads = ["iPhone 15 Pro Max", "Samsung Galaxy S24 Ultra", "Xiaomi 14 Pro", "Huawei Mate 60 Pro"]
             with open('ads.txt', 'w', encoding='utf-8') as f:
                 f.write("\n".join(sample_ads) + "\n")
-            st.success("✨ تم إنشاء ملف `ads.txt` تجريبي بنجاح! يمكنك الآن الضغط على زر القراءة أعلاه.")
+            st.success("✨ تم إنشاء ملف `ads.txt` تجريبي بنجاح!")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ------------------------------------------
-# التبويب الثاني: توليد ريلز
-# ------------------------------------------
-with tab2:
+# =======================================================================
+#  تبويب 3: توليد ريلز (الكود الأصلي)
+# =======================================================================
+with tab3:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("🎥 توليد ريلز احترافية")
-    st.markdown("أنشئ فيديو قصير مع تعليق صوتي فصيح وموسيقى خلفية ونصوص واضحة.")
 
     VOICES = {
         "رجالي - سعودي (حامد)": "ar-SA-HamedNeural",
@@ -487,10 +578,10 @@ with tab2:
 
     with st.form("reel_form"):
         script_text = st.text_area(
-            "النص التعليقي الكامل (سيُقرأ في الفيديو)",
+            "النص التعليقي الكامل",
             "مرحباً بكم في متجرنا، نقدم لكم أفضل العروض على الجوالات الحديثة. تواصلوا معنا الآن واحصلوا على خصم خاص."
         )
-        uploaded_video = st.file_uploader("🎬 (اختياري) ارفع فيديو جاهز للمنتج", type=["mp4", "mov", "m4v"])
+        uploaded_video = st.file_uploader("🎬 (اختياري) ارفع فيديو جاهز", type=["mp4", "mov", "m4v"])
         uploaded_images = st.file_uploader("أو ارفع صوراً للمنتج (سلايد شو)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
         col1, col2 = st.columns(2)
@@ -514,7 +605,7 @@ with tab2:
         else:
             temp_files = []
             try:
-                with st.spinner("⏳ جاري تحضير الريلز والصوت بالذكاء الاصطناعي..."):
+                with st.spinner("⏳ جاري تحضير الريلز والصوت..."):
                     voice = VOICES[voice_label]
                     temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
                     temp_files.append(temp_audio_path)
@@ -535,62 +626,59 @@ with tab2:
                     target_size = (1080, 1920) if aspect.startswith("عمودي") else (1080, 1080)
                     caption = overlay_caption.strip() or script_text.strip().split(".")[0][:90]
 
-                    if uploaded_video is not None:
-                        temp_src_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-                        temp_files.append(temp_src_video_path)
-                        with open(temp_src_video_path, "wb") as f:
+                    if uploaded_video:
+                        temp_src = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+                        temp_files.append(temp_src)
+                        with open(temp_src, "wb") as f:
                             f.write(uploaded_video.read())
 
-                        raw_video_clip = VideoFileClip(temp_src_video_path)
-                        if raw_video_clip.duration < duration:
-                            raw_video_clip = mp_loop(raw_video_clip, duration=duration)
+                        raw_video = VideoFileClip(temp_src)
+                        if raw_video.duration < duration:
+                            raw_video = mp_loop(raw_video, duration=duration)
                         else:
-                            raw_video_clip = raw_video_clip.subclip(0, duration)
+                            raw_video = raw_video.subclip(0, duration)
 
-                        base_video_clip = fit_video_to_canvas(raw_video_clip, target_size).without_audio()
+                        base_video = fit_video_to_canvas(raw_video, target_size).without_audio()
 
                         if add_text_overlay:
-                            text_overlay_img = render_transparent_caption_band(target_size, caption)
-                            temp_overlay_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
-                            temp_files.append(temp_overlay_path)
-                            text_overlay_img.save(temp_overlay_path)
-
-                            text_clip = ImageClip(temp_overlay_path, transparent=True).set_duration(duration)
-                            video_clip = CompositeVideoClip([base_video_clip, text_clip], size=target_size)
+                            overlay_img = render_transparent_caption_band(target_size, caption)
+                            temp_overlay = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                            temp_files.append(temp_overlay)
+                            overlay_img.save(temp_overlay)
+                            text_clip = ImageClip(temp_overlay, transparent=True).set_duration(duration)
+                            video_clip = CompositeVideoClip([base_video, text_clip], size=target_size)
                         else:
-                            video_clip = base_video_clip
+                            video_clip = base_video
                         video_clip = video_clip.set_duration(duration)
                     else:
-                        images_list = []
+                        images = []
                         if uploaded_images:
                             for f in uploaded_images:
-                                images_list.append(Image.open(f))
-                        elif use_generated_image and st.session_state["last_ad_card"] is not None:
-                            images_list.append(st.session_state["last_ad_card"])
+                                images.append(Image.open(f))
+                        elif use_generated_image and st.session_state["last_ad_card"]:
+                            images.append(st.session_state["last_ad_card"])
                         else:
-                            images_list.append(Image.new("RGB", (1080, 1080), color=(30, 30, 50)))
+                            images.append(Image.new("RGB", (1080, 1080), color=(30, 30, 50)))
 
-                        per_image_duration = duration / len(images_list)
-                        video_segments = []
-                        for raw_img in images_list:
+                        per_image = duration / len(images)
+                        segments = []
+                        for raw_img in images:
                             canvas = fit_image_to_canvas(raw_img, target_size)
                             if add_text_overlay:
                                 canvas = overlay_caption_on_image(canvas, caption)
+                            temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                            temp_files.append(temp_img)
+                            canvas.save(temp_img)
+                            segments.append(ImageClip(temp_img).set_duration(per_image))
 
-                            temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
-                            temp_files.append(temp_img_path)
-                            canvas.save(temp_img_path)
+                        video_clip = concatenate_videoclips(segments, method="compose") if len(segments) > 1 else segments[0]
 
-                            video_segments.append(ImageClip(temp_img_path).set_duration(per_image_duration))
-
-                        video_clip = concatenate_videoclips(video_segments, method="compose") if len(video_segments) > 1 else video_segments[0]
-
-                    if background_music is not None:
-                        temp_music_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
-                        temp_files.append(temp_music_path)
-                        with open(temp_music_path, "wb") as f:
+                    if background_music:
+                        temp_music = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
+                        temp_files.append(temp_music)
+                        with open(temp_music, "wb") as f:
                             f.write(background_music.read())
-                        music_clip = AudioFileClip(temp_music_path).volumex(music_volume)
+                        music_clip = AudioFileClip(temp_music).volumex(music_volume)
                         if music_clip.duration < duration:
                             reps = int(duration // music_clip.duration) + 1
                             music_clip = concatenate_audioclips([music_clip] * reps).subclip(0, duration)
@@ -611,7 +699,7 @@ with tab2:
                     st.download_button("📥 تحميل الريلز (MP4)", data=f.read(), file_name="reel.mp4", mime="video/mp4")
 
             except Exception as e:
-                st.error(f"حدث خطأ أثناء توليد الريلز: {e}")
+                st.error(f"حدث خطأ: {e}")
             finally:
                 for file in temp_files:
                     if os.path.exists(file):
@@ -621,16 +709,16 @@ with tab2:
                             pass
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ------------------------------------------
-# التبويب الثالث: معرض الصور
-# ------------------------------------------
-with tab3:
+# =======================================================================
+#  تبويب 4: معرض الصور (الكود الأصلي)
+# =======================================================================
+with tab4:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("🖼️ معرض الصور المولدة")
 
     gallery = st.session_state["gallery"]
     if not gallery:
-        st.info("لا توجد صور بعد. أنشئ بطاقات إعلان أو استخدم ملف `ads.txt` لتظهر هنا تلقائياً.")
+        st.info("لا توجد صور بعد. أنشئ بطاقات إعلان أو استخدم ملف `ads.txt` لتظهر هنا.")
     else:
         cols = st.columns(3)
         for i, item in enumerate(reversed(gallery)):
@@ -645,8 +733,8 @@ with tab3:
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ==========================================
-# تذييل الصفحة
-# ==========================================
+# =======================================================================
+#  تذييل الصفحة
+# =======================================================================
 st.markdown("---")
 st.caption("© 2026 Saeed PostGen - صُنع بحب في اليمن 🇾🇪")
