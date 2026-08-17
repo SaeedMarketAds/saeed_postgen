@@ -1,8 +1,5 @@
 # ==========================================
-# Saeed PostGen - أداة متكاملة لتوليد الريلز والصور والموسيقى بالذكاء الاصطناعي
-# نسخة محسّنة v2: قوالب تصميم، دعم عربي صحيح، معرض صور فعلي، إعدادات فيديو أوسع
-# + إصلاح نهائي لمشكلة النص فوق الفيديو (رسم بـ PIL بدل TextClip/ImageMagick)
-# + دعم أكثر من صورة في الريلز الواحد (سلايد شو مع سرد صوتي متصل)
+# Saeed PostGen - صانع المحتوى بالذكاء الاصطناعي (بدون نصوص فوق المنتجات)
 # ==========================================
 import io
 import os
@@ -12,12 +9,7 @@ import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-# ------------------------------------------------------------------
-# إصلاح توافق: نسخ Pillow الحديثة (10+) أزالت Image.ANTIALIAS
-# بينما مكتبة MoviePy القديمة لسه بتستخدمه داخليًا عند تغيير حجم الصور/الفيديو.
-# نعيد تعريفه هنا كي لا يفشل moviepy بالخطأ:
-# "module 'PIL.Image' has no attribute 'ANTIALIAS'"
-# ------------------------------------------------------------------
+# إصلاح توافق Pillow الحديثة
 if not hasattr(Image, "ANTIALIAS"):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
@@ -28,7 +20,6 @@ from moviepy.editor import (
 from moviepy.video.fx.all import crop as mp_crop, loop as mp_loop
 from moviepy.audio.AudioClip import concatenate_audioclips, CompositeAudioClip
 
-# دعم عرض النصوص العربية بشكل صحيح (اتجاه واتصال الحروف)
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
@@ -36,7 +27,6 @@ try:
 except ImportError:
     ARABIC_SUPPORT = False
 
-# محاولة استيراد google.generativeai
 try:
     import google.generativeai as genai
     GENAI_AVAILABLE = True
@@ -44,7 +34,61 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 # ==========================================
-# إعدادات الصفحة
+# إعدادات الخطوط والمسارات
+# ==========================================
+FONT_SEARCH_PATHS = [
+    "fonts/Cairo-Bold.ttf",
+    "fonts/Tajawal-Bold.ttf",
+    "fonts/Amiri-Bold.ttf",
+    "fonts/NotoNaskhArabic-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+    "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
+]
+
+FONT_SEARCH_PATHS_REGULAR = [
+    "fonts/Cairo-Regular.ttf",
+    "fonts/Tajawal-Regular.ttf",
+    "fonts/Amiri-Regular.ttf",
+    "fonts/NotoNaskhArabic-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+    "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
+]
+
+_ARABIC_FONT_STATUS = {"checked": False, "ok": False, "path": None}
+
+def _font_supports_arabic(font_obj) -> bool:
+    try:
+        test_img = Image.new("RGB", (10, 10))
+        draw = ImageDraw.Draw(test_img)
+        bbox = draw.textbbox((0, 0), "مرحبا", font=font_obj)
+        return (bbox[2] - bbox[0]) > 5
+    except Exception:
+        return False
+
+def get_font(size, bold=True):
+    candidates = FONT_SEARCH_PATHS if bold else FONT_SEARCH_PATHS_REGULAR
+    for path in candidates:
+        try:
+            font_obj = ImageFont.truetype(path, size)
+            if _font_supports_arabic(font_obj):
+                if not _ARABIC_FONT_STATUS["checked"]:
+                    _ARABIC_FONT_STATUS.update(checked=True, ok=True, path=path)
+                return font_obj
+        except Exception:
+            continue
+
+    if not _ARABIC_FONT_STATUS["checked"]:
+        _ARABIC_FONT_STATUS.update(checked=True, ok=False, path=None)
+
+    for path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arial.ttf"]:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+# ==========================================
+# إعدادات الصفحة والتصميم
 # ==========================================
 st.set_page_config(
     page_title="Saeed PostGen - صانع المحتوى بالذكاء الاصطناعي",
@@ -52,9 +96,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# ==========================================
-# CSS مخصص لتحسين المظهر
-# ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -84,26 +125,13 @@ st.markdown("""
 st.markdown('<div class="title">🎬 Saeed PostGen</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">أنشئ ريلز احترافية وصوراً وموسيقى بالذكاء الاصطناعي بنقرة واحدة</div>', unsafe_allow_html=True)
 
-# فحص مبكر لتوفر خط عربي حقيقي (استدعاء get_font مرة واحدة يكفي لتفعيل الفحص الداخلي)
-_ = get_font(30, bold=True)
-if _ARABIC_FONT_STATUS["checked"] and not _ARABIC_FONT_STATUS["ok"]:
-    st.error(
-        "⚠️ لا يوجد خط عربي حقيقي مثبّت على الخادم، لذلك ستظهر النصوص العربية فارغة على البطاقات والفيديوهات. "
-        "الحل: أضف ملف خط عربي (مثل Cairo-Bold.ttf) داخل مجلد باسم **fonts** في جذر الريبو، "
-        "بحيث يكون المسار النهائي: fonts/Cairo-Bold.ttf و fonts/Cairo-Regular.ttf"
-    )
-
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-# تهيئة معرض الصور والذاكرة المؤقتة للجلسة
 if "gallery" not in st.session_state:
-    st.session_state["gallery"] = []  # كل عنصر: {"image": PIL.Image, "caption": str}
+    st.session_state["gallery"] = []
 if "last_ad_card" not in st.session_state:
     st.session_state["last_ad_card"] = None
 
-# ==========================================
-# قوالب تصميم البطاقة
-# ==========================================
 TEMPLATES = {
     "ذهبي فاخر": {"bg": (15, 23, 42), "accent": (251, 191, 36), "text": (255, 255, 255), "sub": (200, 200, 200)},
     "أزرق تقني": {"bg": (10, 20, 40), "accent": (56, 189, 248), "text": (255, 255, 255), "sub": (180, 200, 220)},
@@ -111,105 +139,25 @@ TEMPLATES = {
     "أحمر جريء": {"bg": (30, 12, 12), "accent": (248, 113, 113), "text": (255, 255, 255), "sub": (220, 190, 190)},
 }
 
-
-FONT_SEARCH_PATHS = [
-    # المسار الموصى به: ضع الخط داخل مجلد fonts/ في جذر الريبو بهذين الاسمين تحديداً
-    "fonts/Cairo-Bold.ttf",
-    "fonts/Tajawal-Bold.ttf",
-    "fonts/Amiri-Bold.ttf",
-    "fonts/NotoNaskhArabic-Bold.ttf",
-    # مسارات نظام محتملة (قد لا تدعم العربية حتى لو وُجدت)
-    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
-    "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
-]
-
-FONT_SEARCH_PATHS_REGULAR = [
-    "fonts/Cairo-Regular.ttf",
-    "fonts/Tajawal-Regular.ttf",
-    "fonts/Amiri-Regular.ttf",
-    "fonts/NotoNaskhArabic-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-    "/usr/share/fonts/truetype/kacst/KacstOne.ttf",
-]
-
-_ARABIC_FONT_STATUS = {"checked": False, "ok": False, "path": None}
-
-
-def _font_supports_arabic(font_obj) -> bool:
-    """اختبار فعلي: يحاول رسم كلمة عربية ويتأكد أن الخط رسم شيئاً فعلاً (عرض > 0)."""
-    try:
-        test_img = Image.new("RGB", (10, 10))
-        draw = ImageDraw.Draw(test_img)
-        bbox = draw.textbbox((0, 0), "مرحبا", font=font_obj)
-        width = bbox[2] - bbox[0]
-        return width > 5
-    except Exception:
-        return False
-
-
-def get_font(size, bold=True):
-    """
-    يحاول تحميل خط عربي حقيقي (Cairo/Tajawal/Amiri) من مجلد fonts/ داخل الريبو أولاً،
-    ثم من مسارات النظام، ويتحقق فعلياً أن الخط يدعم رسم الحروف العربية.
-    ملاحظة مهمة: خط DejaVu لا يدعم العربية إطلاقاً حتى لو كان موجوداً على السيرفر.
-    """
-    candidates = FONT_SEARCH_PATHS if bold else FONT_SEARCH_PATHS_REGULAR
-
-    for path in candidates:
-        try:
-            font_obj = ImageFont.truetype(path, size)
-            if _font_supports_arabic(font_obj):
-                if not _ARABIC_FONT_STATUS["checked"]:
-                    _ARABIC_FONT_STATUS.update(checked=True, ok=True, path=path)
-                return font_obj
-        except Exception:
-            continue
-
-    # لم يتم إيجاد أي خط يدعم العربية فعلياً
-    if not _ARABIC_FONT_STATUS["checked"]:
-        _ARABIC_FONT_STATUS.update(checked=True, ok=False, path=None)
-
-    # كحل أخير نحاول DejaVu (لعرض الأرقام/الرموز/الإنجليزية على الأقل بدل الفشل الكامل)
-    fallback_candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
-        "arial.ttf",
-    ]
-    for path in fallback_candidates:
-        try:
-            return ImageFont.truetype(path, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-
 def ar(text):
-    """يهيئ النص العربي للعرض الصحيح (اتصال الحروف + اتجاه من اليمين لليسار)."""
     if ARABIC_SUPPORT and text:
         try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
+            return get_display(arabic_reshaper.reshape(text))
         except Exception:
             return text
     return text
 
-
 def draw_rounded_rect(draw, xy, radius, fill):
     draw.rounded_rectangle(xy, radius=radius, fill=fill)
 
-
 def wrap_arabic_text(draw, text, font, max_width):
-    """يقسّم النص العربي (بعد التهيئة) إلى أسطر بحيث لا يتجاوز أي سطر العرض المتاح."""
-    # نلف الكلمات الأصلية (قبل reshape) لأن reshape يجب أن يُطبّق على كل سطر مكتمل
     words = text.split()
-    lines = []
-    current = []
+    lines, current = [], []
     for word in words:
         trial = current + [word]
         trial_text = ar(" ".join(trial))
         bbox = draw.textbbox((0, 0), trial_text, font=font)
-        w = bbox[2] - bbox[0]
-        if w <= max_width or not current:
+        if (bbox[2] - bbox[0]) <= max_width or not current:
             current = trial
         else:
             lines.append(" ".join(current))
@@ -218,132 +166,28 @@ def wrap_arabic_text(draw, text, font, max_width):
         lines.append(" ".join(current))
     return lines
 
-
-def overlay_caption_on_image(base_img: Image.Image, caption: str, accent_color=(251, 191, 36)):
-    """
-    يرسم نصاً عريضاً وواضحاً فوق صورة، بخلفية شبه شفافة وحدود ملونة،
-    بديل كامل عن TextClip الذي يحتاج ImageMagick وغير متاح على الخادم.
-    """
-    img = base_img.convert("RGB").copy()
-    w, h = img.size
-    draw = ImageDraw.Draw(img, "RGBA")
-
-    if not caption:
-        return img
-
-    font_size = max(38, int(w * 0.052))
-    font = get_font(font_size, bold=True)
-    max_text_width = int(w * 0.86)
-
-    lines = wrap_arabic_text(draw, caption, font, max_text_width)
-    # حد أقصى 4 أسطر حتى لا يغطي النص كل الفيديو
-    lines = lines[:4]
-
-    line_height = int(font_size * 1.35)
-    block_height = line_height * len(lines) + 50
-    band_top = h - block_height - 60
-    band_bottom = h - 40
-
-    # خلفية داكنة شبه شفافة لضمان وضوح النص فوق أي صورة
-    draw.rectangle([(0, band_top), (w, band_bottom)], fill=(10, 10, 15, 190))
-    # خط علوي ملون كتوقيع بصري للعلامة
-    draw.rectangle([(0, band_top), (w, band_top + 6)], fill=accent_color + (255,))
-
-    y = band_top + 25
-    for line in lines:
-        display_line = ar(line)
-        bbox = draw.textbbox((0, 0), display_line, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (w - tw) / 2
-        # طبقة outline (تفريغ أسود) لزيادة التباين والوضوح
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
-            draw.text((x + dx, y + dy), display_line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, y), display_line, font=font, fill=(255, 255, 255, 255))
-        y += line_height
-
-    return img
-
-
-def render_transparent_caption_band(size, caption: str, accent_color=(251, 191, 36)):
-    """
-    يبني صورة PNG شفافة (RGBA) بنفس أبعاد الفيديو، وفيها فقط شريط النص السفلي.
-    تُستخدم كطبقة (overlay) توضع فوق فيديو حقيقي بدون التأثير على محتوى الفيديو نفسه.
-    """
-    w, h = size
-    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    if not caption:
-        return overlay
-
-    draw = ImageDraw.Draw(overlay, "RGBA")
-    font_size = max(38, int(w * 0.052))
-    font = get_font(font_size, bold=True)
-    max_text_width = int(w * 0.86)
-
-    lines = wrap_arabic_text(draw, caption, font, max_text_width)
-    lines = lines[:4]
-
-    line_height = int(font_size * 1.35)
-    block_height = line_height * len(lines) + 50
-    band_top = h - block_height - 60
-    band_bottom = h - 40
-
-    draw.rectangle([(0, band_top), (w, band_bottom)], fill=(10, 10, 15, 190))
-    draw.rectangle([(0, band_top), (w, band_top + 6)], fill=accent_color + (255,))
-
-    y = band_top + 25
-    for line in lines:
-        display_line = ar(line)
-        bbox = draw.textbbox((0, 0), display_line, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (w - tw) / 2
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
-            draw.text((x + dx, y + dy), display_line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, y), display_line, font=font, fill=(255, 255, 255, 255))
-        y += line_height
-
-    return overlay
-
-
 def fit_video_to_canvas(video_clip, target_size):
-    """
-    يلائم فيديو مرفوع (زي فيديوهات دوران المنتج) داخل أبعاد الريلز المطلوبة،
-    عبر تكبير الفيديو حتى يغطي الإطار بالكامل ثم قص الزيادة من المنتصف (بدون تشويه النسب).
-    """
     target_w, target_h = target_size
     clip_w, clip_h = video_clip.w, video_clip.h
-
     target_ratio = target_w / target_h
     clip_ratio = clip_w / clip_h
 
     if clip_ratio > target_ratio:
-        # الفيديو أعرض من المطلوب: نكبّر حسب الارتفاع ثم نقص الجوانب
         resized = video_clip.resize(height=target_h)
     else:
-        # الفيديو أطول من المطلوب: نكبّر حسب العرض ثم نقص الأعلى والأسفل
         resized = video_clip.resize(width=target_w)
 
-    resized_w, resized_h = resized.w, resized.h
-    x_center = resized_w / 2
-    y_center = resized_h / 2
-
-    cropped = mp_crop(
-        resized,
-        width=min(target_w, resized_w),
-        height=min(target_h, resized_h),
-        x_center=x_center,
-        y_center=y_center,
-    )
-    # ضبط أخير للمقاس بالضبط تحسباً لفروق تقريب بسيطة
-    return cropped.resize(newsize=target_size)
-
+    return mp_crop(
+        resized, width=min(target_w, resized.w), height=min(target_h, resized.h),
+        x_center=resized.w / 2, y_center=resized.h / 2
+    ).resize(newsize=target_size)
 
 def fit_image_to_canvas(image_to_use: Image.Image, target_size):
-    """يلائم الصورة داخل الإطار المطلوب مع خلفية معتّمة خلفها إن كانت الأبعاد عمودية."""
     image_to_use = image_to_use.convert("RGB")
     if image_to_use.size == target_size:
         return image_to_use.copy()
 
-    if target_size[1] > target_size[0]:  # عمودي
+    if target_size[1] > target_size[0]:
         bg = image_to_use.resize(target_size).filter(ImageFilter.GaussianBlur(20))
         fitted = image_to_use.copy()
         fitted.thumbnail((target_size[0], target_size[0]))
@@ -353,13 +197,11 @@ def fit_image_to_canvas(image_to_use: Image.Image, target_size):
     else:
         return image_to_use.resize(target_size)
 
-
 def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, logo_img=None):
     tpl = TEMPLATES[template_name]
     w, h = 1080, 1080
     card = Image.new("RGB", (w, h), color=tpl["bg"])
 
-    # تدرج خفيف في الخلفية لإضافة عمق
     gradient = Image.new("L", (1, h), color=0)
     for y in range(h):
         gradient.putpixel((0, y), int(40 * (y / h)))
@@ -369,15 +211,14 @@ def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, log
 
     draw = ImageDraw.Draw(card, "RGBA")
 
-    # ==== شريط علوي: اسم المتجر + شارة "عرض حصري" ====
+    # شريط علوي
     draw_rounded_rect(draw, [(60, 55), (w - 60, 135)], 22, tpl["accent"])
     title_font = get_font(44)
     brand_text = ar("SaeedMarketAds  •  عرض حصري")
     bbox = draw.textbbox((0, 0), brand_text, font=title_font)
-    tw = bbox[2] - bbox[0]
-    draw.text(((w - tw) / 2, 68), brand_text, fill=tpl["bg"], font=title_font)
+    draw.text(((w - (bbox[2] - bbox[0])) / 2, 68), brand_text, fill=tpl["bg"], font=title_font)
 
-    # ==== إطار المحتوى الرئيسي (زجاجي فاخر) ====
+    # إطار المحتوى
     draw_rounded_rect(draw, [(55, 165), (w - 55, h - 200)], 34, (255, 255, 255, 12))
     content_box = [(85, 195), (w - 85, h - 230)]
     draw.rounded_rectangle(content_box, radius=28, outline=tpl["accent"], width=4)
@@ -388,97 +229,72 @@ def build_ad_card(product_name, storage_ram, price, whatsapp, template_name, log
     font_badge = get_font(28)
 
     y = 250
-
-    # اسم المنتج (سطر أو سطرين حسب الطول)
     product_lines = wrap_arabic_text(draw, f"📱 {product_name}", font_product, w - 260)[:2]
     for line in product_lines:
         display_line = ar(line)
         bbox = draw.textbbox((0, 0), display_line, font=font_product)
-        tw = bbox[2] - bbox[0]
-        draw.text(((w - tw) / 2, y), display_line, fill=tpl["text"], font=font_product)
+        draw.text(((w - (bbox[2] - bbox[0])) / 2, y), display_line, fill=tpl["text"], font=font_product)
         y += 78
 
     y += 25
-    # المواصفات
     spec_text = ar(f"💾 {storage_ram}")
     bbox = draw.textbbox((0, 0), spec_text, font=font_body)
-    tw = bbox[2] - bbox[0]
-    draw.text(((w - tw) / 2, y), spec_text, fill=tpl["sub"], font=font_body)
+    draw.text(((w - (bbox[2] - bbox[0])) / 2, y), spec_text, fill=tpl["sub"], font=font_body)
     y += 75
 
-    # ==== صندوق السعر البارز مع توهج/ظل خلفي ====
+    # السعر
     price_text = ar(f"💰 {price}")
     bbox = draw.textbbox((0, 0), price_text, font=font_price)
-    price_w = bbox[2] - bbox[0]
-    price_h = bbox[3] - bbox[1]
-    box_padding_x, box_padding_y = 45, 22
-    box_left = (w - price_w) / 2 - box_padding_x
-    box_right = (w + price_w) / 2 + box_padding_x
-    box_top = y - box_padding_y
-    box_bottom = y + price_h + box_padding_y + 20
+    pw, ph = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    box_left, box_right = (w - pw) / 2 - 45, (w + pw) / 2 + 45
+    box_top, box_bottom = y - 22, y + ph + 42
 
-    # طبقة توهج خلف الصندوق
     glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow)
-    glow_draw.rounded_rectangle(
-        [(box_left - 10, box_top - 10), (box_right + 10, box_bottom + 10)],
-        radius=30, fill=tpl["accent"] + (90,)
-    )
+    glow_draw.rounded_rectangle([(box_left - 10, box_top - 10), (box_right + 10, box_bottom + 10)], radius=30, fill=tpl["accent"] + (90,))
     glow = glow.filter(ImageFilter.GaussianBlur(18))
     card.paste(glow, (0, 0), glow)
-    draw = ImageDraw.Draw(card, "RGBA")  # إعادة إنشاء draw بعد اللصق
+    draw = ImageDraw.Draw(card, "RGBA")
 
     draw.rounded_rectangle([(box_left, box_top), (box_right, box_bottom)], radius=22, fill=tpl["accent"])
-    draw.text(((w - price_w) / 2, y), price_text, fill=tpl["bg"], font=font_price)
+    draw.text(((w - pw) / 2, y), price_text, fill=tpl["bg"], font=font_price)
     y = box_bottom + 45
 
-    # ==== شارات ثقة (ضمان / أصلي / توصيل) ====
     trust_badges = [ar("✅ ضمان"), ar("💯 أصلي 100%"), ar("🚚 توصيل سريع")]
     badge_gap = 20
-    badge_widths = []
-    for b in trust_badges:
-        bb = draw.textbbox((0, 0), b, font=font_badge)
-        badge_widths.append(bb[2] - bb[0] + 44)
-    total_badges_w = sum(badge_widths) + badge_gap * (len(trust_badges) - 1)
-    bx = (w - total_badges_w) / 2
+    badge_widths = [draw.textbbox((0, 0), b, font=font_badge)[2] - draw.textbbox((0, 0), b, font=font_badge)[0] + 44 for b in trust_badges]
+    bx = (w - (sum(badge_widths) + badge_gap * (len(trust_badges) - 1))) / 2
     for b, bw in zip(trust_badges, badge_widths):
         draw.rounded_rectangle([(bx, y), (bx + bw, y + 56)], radius=18, outline=tpl["accent"], width=2)
         bb = draw.textbbox((0, 0), b, font=font_badge)
-        btw = bb[2] - bb[0]
-        draw.text((bx + (bw - btw) / 2, y + 12), b, fill=tpl["text"], font=font_badge)
+        draw.text((bx + (bw - (bb[2] - bb[0])) / 2, y + 12), b, fill=tpl["text"], font=font_badge)
         bx += bw + badge_gap
     y += 90
 
-    # رقم التواصل
     contact_text = ar(f"📞 {whatsapp}")
     bbox = draw.textbbox((0, 0), contact_text, font=font_body)
-    tw = bbox[2] - bbox[0]
-    draw.text(((w - tw) / 2, y), contact_text, fill=tpl["text"], font=font_body)
+    draw.text(((w - (bbox[2] - bbox[0])) / 2, y), contact_text, fill=tpl["text"], font=font_body)
 
-    # شعار اختياري
     if logo_img is not None:
         logo = logo_img.convert("RGBA")
         logo.thumbnail((140, 140))
         card.paste(logo, (w - 190, h - 190), logo)
 
-    # تذييل
     footer_font = get_font(26, bold=False)
     footer_text = ar("تواصل معنا الآن واحصل على عرضك الخاص قبل نفاد الكمية")
     bbox = draw.textbbox((0, 0), footer_text, font=footer_font)
-    tw = bbox[2] - bbox[0]
-    draw.text(((w - tw) / 2, h - 165), footer_text, fill=tpl["sub"], font=footer_font)
+    draw.text(((w - (bbox[2] - bbox[0])) / 2, h - 165), footer_text, fill=tpl["sub"], font=footer_font)
 
     return card
 
-
 # ==========================================
-# تبويبات التطبيق
+# واجهة التبويبات
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["📱 بطاقة إعلان", "🎥 توليد ريلز", "🖼️ معرض الصور"])
 
-# ==========================================
-# التبويب الأول: بطاقة إعلان
-# ==========================================
+# ------------------------------------------
+# التبويب الأول: بطاقة إعلان + قراءة ads.txt
+# ------------------------------------------
 with tab1:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("إنشاء بطاقة إعلان للمنتج")
@@ -492,63 +308,70 @@ with tab1:
         with col2:
             price = st.text_input("السعر", "$1,200 - 3,900 ريال")
             whatsapp = st.text_input("رقم واتساب", "+966 50 000 0000")
-            logo_upload = st.file_uploader("شعار المتجر (اختياري، PNG بخلفية شفافة)", type=["png"])
+            logo_upload = st.file_uploader("شعار المتجر (اختياري)", type=["png"])
 
-        use_ai_image = st.checkbox("توليد صورة احترافية للمنتج (اختياري)")
-        gemini_key_input = st.text_input("مفتاح Gemini API (اختياري)", value=GEMINI_API_KEY, type="password")
-
-        submitted = st.form_submit_button("🎨 توليد البطاقة")
+        submitted = st.form_submit_button("🎨 توليد البطاقة الفردية")
 
     if submitted:
         logo_img = Image.open(logo_upload) if logo_upload is not None else None
         card = build_ad_card(product_name, storage_ram, price, whatsapp, template_name, logo_img)
-
-        # حفظ في الجلسة والمعرض
         st.session_state["last_ad_card"] = card
         st.session_state["gallery"].append({"image": card, "caption": f"بطاقة: {product_name}"})
-
         st.image(card, caption="معاينة البطاقة", use_container_width=True)
 
         buf = io.BytesIO()
         card.save(buf, format="PNG")
         st.download_button("📥 تحميل البطاقة (PNG)", data=buf.getvalue(), file_name="ad_card.png", mime="image/png")
 
-        if use_ai_image:
-            active_key = gemini_key_input if gemini_key_input else GEMINI_API_KEY
-            if active_key and GENAI_AVAILABLE:
-                try:
-                    genai.configure(api_key=active_key)
-                    model = genai.GenerativeModel('gemini-2.0-flash-exp')
-                    response = model.generate_content(
-                        f"وصف صورة احترافية لمنتج {product_name} بخلفية بيضاء، إضاءة استوديو، جودة عالية."
-                    )
-                    st.info(f"🔍 وصف الصورة المولدة:\n{response.text}")
-                except Exception as e:
-                    st.error(f"خطأ في Gemini: {e}")
+    st.markdown("---")
+    st.subheader("📁 التوليد التلقائي من ملف ads.txt")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🚀 قراءة وتوليد البطاقات من ملف ads.txt"):
+            if os.path.exists('ads.txt'):
+                with open('ads.txt', 'r', encoding='utf-8') as file:
+                    ads_list = file.readlines()
+                
+                count = 0
+                for line in ads_list:
+                    ad_text = line.strip()
+                    if ad_text and not ad_text.startswith("#"):
+                        card = build_ad_card(
+                            product_name=ad_text,
+                            storage_ram="256GB / 8GB RAM",
+                            price="عرض خاص",
+                            whatsapp=whatsapp,
+                            template_name=template_name,
+                            logo_img=None
+                        )
+                        st.session_state["gallery"].append({"image": card, "caption": f"من ads.txt: {ad_text}"})
+                        count += 1
+                st.success(f"✅ تم توليد {count} بطاقة بنجاح وإضافتها إلى معرض الصور!")
+            else:
+                st.warning("⚠️ ملف `ads.txt` غير موجود. اضغط على الزر المجاور لإنشائه.")
 
-            try:
-                img_url = f"https://image.pollinations.ai/prompt/{product_name.replace(' ', '%20')}%20product%20photography%20white%20background"
-                ai_img_response = requests.get(img_url, timeout=15)
-                if ai_img_response.status_code == 200:
-                    ai_img = Image.open(io.BytesIO(ai_img_response.content))
-                    st.image(ai_img, caption="صورة مولدة بواسطة الذكاء الاصطناعي (pollinations.ai)", use_container_width=True)
-                    st.session_state["gallery"].append({"image": ai_img, "caption": f"صورة AI: {product_name}"})
-                else:
-                    st.warning("تعذر توليد الصورة عبر الخدمة المجانية، حاول مرة أخرى.")
-            except Exception as e:
-                st.warning(f"فشل توليد الصورة: {e}")
+    with col_btn2:
+        if st.button("📝 إنشاء ملف ads.txt تجريبي"):
+            sample_ads = [
+                "iPhone 15 Pro Max",
+                "Samsung Galaxy S24 Ultra",
+                "Xiaomi 14 Pro",
+                "Huawei Mate 60 Pro"
+            ]
+            with open('ads.txt', 'w', encoding='utf-8') as f:
+                f.write("\n".join(sample_ads) + "\n")
+            st.success("✨ تم إنشاء ملف `ads.txt` تجريبي بنجاح!")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ==========================================
-# التبويب الثاني: توليد ريلز (نسخة محسّنة: عدة صور + نص مضمون الظهور)
-# ==========================================
+# ------------------------------------------
+# التبويب الثاني: توليد ريلز (بدون نصوص فوق الفيديو/الصور)
+# ------------------------------------------
 with tab2:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
-    st.subheader("🎥 توليد ريلز احترافية")
-    st.markdown(
-        "أنشئ فيديو قصير من صورة واحدة أو عدة صور، أو من فيديو جاهز ترفعه (مثل فيديو دوران المنتج)، "
-        "مع تعليق صوتي فصيح وموسيقى خلفية، والنص يظهر بخط عريض وواضح فوق المحتوى."
-    )
+    st.subheader("🎥 توليد ريلز احترافية (بدون نصوص غطاء فوق المنتج)")
+    st.markdown("أنشئ ريلز نظيفة ومرتبة بالتعليق الصوتي والموسيقى فقط، مع ظهور المنتج بوضوح تام.")
 
     VOICES = {
         "رجالي - سعودي (حامد)": "ar-SA-HamedNeural",
@@ -559,20 +382,11 @@ with tab2:
 
     with st.form("reel_form"):
         script_text = st.text_area(
-            "النص التعليقي الكامل (سيُقرأ في الفيديو)",
+            "النص التعليقي الكامل (للصوت فقط)",
             "مرحباً بكم في متجرنا، نقدم لكم أفضل العروض على الجوالات الحديثة. تواصلوا معنا الآن واحصلوا على خصم خاص."
         )
-
-        uploaded_video = st.file_uploader(
-            "🎬 (اختياري) ارفع فيديو جاهز للمنتج (مثل فيديو دوران 360) ليُستخدم كخلفية بدل الصور",
-            type=["mp4", "mov", "m4v"],
-        )
-
-        uploaded_images = st.file_uploader(
-            "أو ارفع صورة واحدة أو عدة صور للمنتج (سيتم عرضها بالتتابع كسلايد شو) - يُتجاهل إذا رفعت فيديو أعلاه",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-        )
+        uploaded_video = st.file_uploader("🎬 (اختياري) ارفع فيديو جاهز للمنتج", type=["mp4", "mov", "m4v"])
+        uploaded_images = st.file_uploader("أو ارفع صوراً للمنتج (سلايد شو)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -580,27 +394,20 @@ with tab2:
             use_generated_image = st.checkbox("استخدام صورة البطاقة الأخيرة إن لم أرفع صوراً")
         with col2:
             aspect = st.selectbox("أبعاد الفيديو", ["عمودي 9:16 (ريلز/ستوري)", "مربع 1:1"])
-            add_text_overlay = st.checkbox("إضافة نص واضح فوق الفيديو", value=True)
 
         background_music = st.file_uploader("ارفع موسيقى خلفية (MP3) - اختياري", type=["mp3"])
         music_volume = st.slider("مستوى صوت الموسيقى", 0.0, 1.0, 0.3)
         duration = st.slider("إجمالي مدة الفيديو (بالثواني)", 5, 60, 14)
 
-        overlay_caption = st.text_input(
-            "النص الذي يظهر فوق الصور (اتركه فارغاً لاستخدام أول جملة من النص التعليقي)",
-            ""
-        )
-
         generate_reel = st.form_submit_button("🚀 توليد الريلز الآن")
 
     if generate_reel:
         if not script_text.strip():
-            st.warning("الرجاء كتابة النص التعليقي.")
+            st.warning("الرجاء كتابة النص التعليقي للصوت.")
         else:
             temp_files = []
             try:
-                with st.spinner("⏳ جاري تحضير الريلز... قد يستغرق هذا دقيقة."):
-                    # 1. توليد الصوت الكامل (فصيح عبر Edge-TTS)
+                with st.spinner("⏳ جاري تحضير الفيديو والصوت بالذكاء الاصطناعي..."):
                     voice = VOICES[voice_label]
                     temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
                     temp_files.append(temp_audio_path)
@@ -620,51 +427,20 @@ with tab2:
 
                     target_size = (1080, 1920) if aspect.startswith("عمودي") else (1080, 1080)
 
-                    # النص الظاهر فوق الفيديو/الصور
-                    caption = overlay_caption.strip()
-                    if not caption:
-                        first_sentence = script_text.strip().split(".")[0]
-                        caption = first_sentence[:90]
-
                     if uploaded_video is not None:
-                        # ==========================================
-                        # المسار الجديد: استخدام فيديو مرفوع جاهز كخلفية
-                        # (مثل فيديوهات دوران المنتج 360) + رسم النص كطبقة شفافة فوقه
-                        # ==========================================
                         temp_src_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
                         temp_files.append(temp_src_video_path)
                         with open(temp_src_video_path, "wb") as f:
                             f.write(uploaded_video.read())
 
                         raw_video_clip = VideoFileClip(temp_src_video_path)
-
-                        # تمديد الفيديو (تكرار) إذا كان أقصر من المدة المطلوبة، أو قصّه إذا كان أطول
                         if raw_video_clip.duration < duration:
                             raw_video_clip = mp_loop(raw_video_clip, duration=duration)
                         else:
                             raw_video_clip = raw_video_clip.subclip(0, duration)
 
-                        base_video_clip = fit_video_to_canvas(raw_video_clip, target_size)
-                        # إزالة الصوت الأصلي للفيديو المرفوع (سيُستبدل بالتعليق الصوتي المولّد)
-                        base_video_clip = base_video_clip.without_audio()
-
-                        if add_text_overlay:
-                            text_overlay_img = render_transparent_caption_band(target_size, caption)
-                            temp_overlay_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
-                            temp_files.append(temp_overlay_path)
-                            text_overlay_img.save(temp_overlay_path)
-
-                            text_clip = ImageClip(temp_overlay_path, transparent=True).set_duration(duration)
-                            video_clip = CompositeVideoClip([base_video_clip, text_clip], size=target_size)
-                        else:
-                            video_clip = base_video_clip
-
-                        video_clip = video_clip.set_duration(duration)
-
+                        video_clip = fit_video_to_canvas(raw_video_clip, target_size).without_audio().set_duration(duration)
                     else:
-                        # ==========================================
-                        # المسار الأصلي (كما كان): سلايد شو من صورة أو عدة صور
-                        # ==========================================
                         images_list = []
                         if uploaded_images:
                             for f in uploaded_images:
@@ -674,24 +450,18 @@ with tab2:
                         else:
                             images_list.append(Image.new("RGB", (1080, 1080), color=(30, 30, 50)))
 
-                        # بناء مقطع فيديو لكل صورة بمدة متساوية من إجمالي المدة
                         per_image_duration = duration / len(images_list)
                         video_segments = []
-                        for idx, raw_img in enumerate(images_list):
+                        for raw_img in images_list:
                             canvas = fit_image_to_canvas(raw_img, target_size)
-                            if add_text_overlay:
-                                canvas = overlay_caption_on_image(canvas, caption)
-
                             temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
                             temp_files.append(temp_img_path)
                             canvas.save(temp_img_path)
 
-                            clip = ImageClip(temp_img_path).set_duration(per_image_duration)
-                            video_segments.append(clip)
+                            video_segments.append(ImageClip(temp_img_path).set_duration(per_image_duration))
 
                         video_clip = concatenate_videoclips(video_segments, method="compose") if len(video_segments) > 1 else video_segments[0]
 
-                    # 5. دمج الموسيقى مع الصوت إن وُجدت
                     if background_music is not None:
                         temp_music_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3').name
                         temp_files.append(temp_music_path)
@@ -708,17 +478,14 @@ with tab2:
                         final_audio = audio_clip
 
                     video_clip = video_clip.set_audio(final_audio)
-
                     output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
                     temp_files.append(output_path)
                     video_clip.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', logger=None)
 
-                st.success("✅ تم توليد الريلز بنجاح، والنص ظاهر بوضوح فوق الفيديو!")
+                st.success("✅ تم توليد الريلز بنجاح وبدون أي نصوص فوق المنتج!")
                 st.video(output_path)
-
                 with open(output_path, "rb") as f:
-                    video_bytes = f.read()
-                st.download_button("📥 تحميل الريلز (MP4)", data=video_bytes, file_name="reel.mp4", mime="video/mp4")
+                    st.download_button("📥 تحميل الريلز (MP4)", data=f.read(), file_name="reel.mp4", mime="video/mp4")
 
             except Exception as e:
                 st.error(f"حدث خطأ أثناء توليد الريلز: {e}")
@@ -731,16 +498,16 @@ with tab2:
                             pass
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ==========================================
+# ------------------------------------------
 # التبويب الثالث: معرض الصور
-# ==========================================
+# ------------------------------------------
 with tab3:
     st.markdown('<div class="card-box">', unsafe_allow_html=True)
     st.subheader("🖼️ معرض الصور المولدة")
 
     gallery = st.session_state["gallery"]
     if not gallery:
-        st.info("لا توجد صور بعد. أنشئ بطاقة إعلان من التبويب الأول وستظهر هنا تلقائياً.")
+        st.info("لا توجد صور بعد.")
     else:
         cols = st.columns(3)
         for i, item in enumerate(reversed(gallery)):
@@ -748,16 +515,12 @@ with tab3:
                 st.image(item["image"], caption=item["caption"], use_container_width=True)
                 buf = io.BytesIO()
                 item["image"].save(buf, format="PNG")
-                st.download_button("📥 تحميل", data=buf.getvalue(), file_name=f"image_{i}.png",
-                                    mime="image/png", key=f"dl_{i}")
+                st.download_button("📥 تحميل", data=buf.getvalue(), file_name=f"image_{i}.png", mime="image/png", key=f"dl_{i}")
 
         if st.button("🗑️ مسح المعرض"):
             st.session_state["gallery"] = []
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ==========================================
-# تذييل
-# ==========================================
 st.markdown("---")
 st.caption("© 2026 Saeed PostGen - صُنع بحب في اليمن 🇾🇪")
