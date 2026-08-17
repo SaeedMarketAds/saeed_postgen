@@ -125,29 +125,34 @@ st.markdown("""
     .card-box {
         background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(6px); border-radius: 25px;
         padding: 25px; border: 1px solid rgba(251,191,36,0.15); margin-bottom: 25px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
     .stButton > button {
         background: linear-gradient(90deg, #fbbf24, #f59e0b); color: #0f172a; font-weight: bold;
         border: none; border-radius: 30px; padding: 12px 30px; transition: all 0.3s;
+        box-shadow: 0 4px 15px rgba(251,191,36,0.2);
     }
     .stButton > button:hover { transform: scale(1.02); box-shadow: 0 8px 25px rgba(251,191,36,0.4); }
     .stTextInput > div > div > input, .stTextArea > div > div > textarea {
         background: rgba(255,255,255,0.05); color: #f8fafc;
         border: 1px solid rgba(251,191,36,0.2); border-radius: 15px;
     }
+    .stSelectbox > div > div { background: rgba(255,255,255,0.05); color: #f8fafc; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🎬 Saeed PostGen</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">أنشئ ريلز احترافية وصوراً وموسيقى بالذكاء الاصطناعي بنقرة واحدة</div>', unsafe_allow_html=True)
 
-# فحص مبكر لتوفر خط عربي
+# =========== التصحيح هنا ===========
+# نستخدم _ARAB_FONT_STATUS (بدون I) كما هو معرف أعلاه
 _ = get_font(30, bold=True)
-if _ARABIC_FONT_STATUS["checked"] and not _ARABIC_FONT_STATUS["ok"]:
+if _ARAB_FONT_STATUS["checked"] and not _ARAB_FONT_STATUS["ok"]:
     st.error(
         "⚠️ لا يوجد خط عربي حقيقي مثبّت على الخادم. أضف ملف خط عربي (مثل Cairo-Bold.ttf) "
         "داخل مجلد باسم **fonts** في جذر الريبو (fonts/Cairo-Bold.ttf)."
     )
+# ===================================
 
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
