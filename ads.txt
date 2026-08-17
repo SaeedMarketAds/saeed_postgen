@@ -1,0 +1,17 @@
+# كود برمجى لقراءة النصوص العربية من ملف خارجي (ads.txt)
+import os
+
+# التأكد من وجود الملف وقراءته
+if os.path.exists('ads.txt'):
+    with open('ads.txt', 'r', encoding='utf-8') as file:
+        ads_list = file.readlines()
+        
+    # قراءة كل سطر (إعلان) وتوليد تصميم له
+    for ad_text in ads_list:
+        ad_text = ad_text.strip() # إزالة المسافات الزائدة
+        if ad_text: # التأكد أن السطر ليس فارغاً
+            print(f"جاري توليد إعلان للنص: {ad_text}")
+            # هنا تستدعي دالة توليد الصورة الخاصة بك وتمرر لها ad_text
+else:
+    print("ملف النصوص ads.txt غير موجود!")
+
