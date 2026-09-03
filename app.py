@@ -2388,5 +2388,118 @@ with tab_ad:
 
         st.divider()
 
+            if st.session_state.last_ad_card is not None:
+
+        st.divider()
+
         st.image(
-            st.se
+            st.session_state.last_ad_card,
+            use_container_width=True,
+        )
+
+        buffer = io.BytesIO()
+        st.session_state.last_ad_card.save(buffer, format="PNG")
+
+        st.download_button(
+            "⬇️ تنزيل بطاقة الإعلان",
+            data=buffer.getvalue(),
+            file_name="saeed_ad_card.png",
+            mime="image/png",
+            use_container_width=True,
+        )
+
+
+# ################################################################
+# TAB 4 — REEL GENERATOR
+# ################################################################
+
+with tab_reel:
+
+    st.markdown("## 🎥 صانع الريلز والإنستغرام")
+    st.caption("أنشئ فيديو قصير بصوت ذكاء اصطناعي مع صورك أو فيديو خاص بك.")
+
+    script = st.text_area(
+        "نص الإعلان (السيناريو)",
+        "احصل الآن على أقوى العروض من سوق سعيد! جودة عالية وأسعار لا تقبل المنافسة.",
+        height=100,
+    )
+
+    r_col1, r_col2 = st.columns(2)
+
+    with r_col1:
+        voice_engine = st.selectbox(
+            "محرك الصوت",
+            ["Edge TTS", "Gemini TTS"],
+        )
+
+        if voice_engine == "Edge TTS":
+            voice_name = st.selectbox("الصوت", list(EDGE_VOICES.keys()))
+            selected_voice = EDGE_VOICES[voice_name]
+        else:
+            voice_name = st.selectbox("الصوت", list(GEMINI_VOICES.keys()))
+            selected_voice = GEMINI_VOICES[voice_name]
+
+        duration = st.slider("مدة الفيديو (ثواني)", 5, 30, 10)
+
+    with r_col2:
+        aspect = st.selectbox("المقاس", ["9:16", "1:1"])
+        caption = st.text_input("نص التوضيح على الفيديو (الكابشن)", "عرض خاص من سوق سعيد")
+        
+        uploaded_imgs = st.file_uploader(
+            "رفع صور للفيديو",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+        )
+
+    if st.button("🎬 إنشاء الريل", type="primary", use_container_width=True):
+        if not script.strip():
+            st.warning("يرجى كتابة نص الإعلان أولاً.")
+        else:
+            with st.spinner("جاري معالجة الفيديو والصوت..."):
+                try:
+                    reel_path, engine_used = create_reel(
+                        script=script,
+                        image_files=uploaded_imgs,
+                        voice_engine=voice_engine,
+                        voice_name=selected_voice,
+                        duration=duration,
+                        aspect=aspect,
+                        caption=caption,
+                    )
+                    
+                    st.session_state.last_reel_video = reel_path
+                    st.success(f"تم إنشاء الريل بنجاح باستخدام {engine_used}!")
+                except Exception as exc:
+                    st.error(f"حدث خطأ أثناء إنشاء الريل: {exc}")
+
+    if st.session_state.last_reel_video and os.path.exists(st.session_state.last_reel_video):
+        st.divider()
+        st.video(st.session_state.last_reel_video)
+
+
+# ################################################################
+# TAB 5 — GALLERY
+# ################################################################
+
+with tab_gallery:
+
+    st.markdown("## 🖼️ معرض التصاميم")
+
+    if not st.session_state.gallery:
+        st.info("المعرض فارغ حالياً. أنشئ صوراً أو بطاقات إعلانية لتظهر هنا.")
+    else:
+        cols = st.columns(3)
+        for idx, item in enumerate(reversed(st.session_state.gallery)):
+            with cols[idx % 3]:
+                img = bytes_to_image(item["data"])
+                st.image(img, caption=item["title"], use_container_width=True)
+                st.download_button(
+                    f"⬇️ تنزيل ({idx+1})",
+                    data=item["data"],
+                    file_name=f"saeed_gallery_{idx+1}.png",
+                    mime="image/png",
+                    key=f"dl_gal_{idx}",
+                    use_container_width=True,
+                )
+
+            
