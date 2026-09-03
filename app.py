@@ -2485,21 +2485,24 @@ with tab_gallery:
 
     st.markdown("## 🖼️ معرض التصاميم")
 
-    if not st.session_state.gallery:
-        st.info("المعرض فارغ حالياً. أنشئ صوراً أو بطاقات إعلانية لتظهر هنا.")
-    else:
-        cols = st.columns(3)
-        for idx, item in enumerate(reversed(st.session_state.gallery)):
-            with cols[idx % 3]:
-                img = bytes_to_image(item["data"])
-                st.image(img, caption=item["title"], use_container_width=True)
-                st.download_button(
-                    f"⬇️ تنزيل ({idx+1})",
-                    data=item["data"],
-                    file_name=f"saeed_gallery_{idx+1}.png",
-                    mime="image/png",
-                    key=f"dl_gal_{idx}",
-                    use_container_width=True,
-                )
+    if st.session_state.last_ad_card is not None:
 
-            
+        st.divider()
+
+        st.image(
+            st.session_state.last_ad_card,
+            caption="بطاقة الإعلان المجهزة",
+            use_container_width=True,
+        )
+
+        buf = io.BytesIO()
+        st.session_state.last_ad_card.save(buf, format="PNG")
+
+        st.download_button(
+            "⬇️ تنزيل بطاقة الإعلان",
+            data=buf.getvalue(),
+            file_name="saeed_ad_card.png",
+            mime="image/png",
+            use_container_width=True,
+        )
+
