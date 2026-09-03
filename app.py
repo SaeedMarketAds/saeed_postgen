@@ -2438,15 +2438,4 @@ with tab_reel:
     )
 
     uploaded_video = st.file_uploader(
-        "فيديو اختياريstreamlit
-Pillow>=10.0.0
-requests
-google-genai
-edge-tts>=6.1.19
-gTTS>=2.5.1
-moviepy
-arabic-reshaper
-python-bidi
-imageio
-imageio-ffmpeg
-numpy
+        "فيديو اختياري
