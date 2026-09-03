@@ -128,7 +128,7 @@ st.set_page_config(
 
 APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.0"
+VERSION = "4.1"  # تم التحديث للإصدار الجديد
 
 DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
 GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
@@ -143,6 +143,7 @@ TARGET_SQUARE = (1080, 1080)
 # VOICES
 # ================================================================
 
+# تم ترتيب الأصوات بحيث يكون "حامد" هو الأول (الافتراضي)
 EDGE_VOICES = {
     "🇸🇦 حامد — سعودي": "ar-SA-HamedNeural",
     "🇸🇦 زارية — سعودية": "ar-SA-ZariyahNeural",
@@ -230,13 +231,12 @@ if "messages" not in st.session_state:
 
 
 # ================================================================
-# CSS
+# CSS - تحسين الألوان والتصميم
 # ================================================================
 
 st.markdown(
     """
 <style>
-
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
 
 html, body, [class*="css"] {
@@ -245,48 +245,63 @@ html, body, [class*="css"] {
 
 .stApp {
     background:
-        radial-gradient(circle at top right, rgba(251,191,36,0.07), transparent 30%),
-        linear-gradient(135deg, #020617 0%, #0f172a 50%, #111827 100%);
+        radial-gradient(circle at 70% 20%, rgba(180, 130, 255, 0.08), transparent 60%),
+        radial-gradient(circle at 30% 80%, rgba(251, 191, 36, 0.05), transparent 60%),
+        linear-gradient(145deg, #0b0f1a 0%, #141b2b 50%, #1a1030 100%);
 }
 
 section[data-testid="stSidebar"] {
     background:
-        linear-gradient(180deg, #020617 0%, #0b1120 100%);
-    border-right: 1px solid rgba(251,191,36,0.15);
+        linear-gradient(180deg, #0b0f1a 0%, #161d2f 100%);
+    border-right: 1px solid rgba(180, 130, 255, 0.25);
 }
 
+/* تحسين البطاقات والعناصر */
 .sma-header {
-    padding: 25px;
-    border-radius: 24px;
+    padding: 30px;
+    border-radius: 28px;
     background:
         linear-gradient(135deg,
-            rgba(251,191,36,0.13),
-            rgba(15,23,42,0.9));
-    border: 1px solid rgba(251,191,36,0.20);
-    margin-bottom: 20px;
+            rgba(180, 130, 255, 0.15),
+            rgba(15, 23, 42, 0.9));
+    border: 1px solid rgba(180, 130, 255, 0.25);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    margin-bottom: 25px;
+    backdrop-filter: blur(4px);
 }
 
 .sma-logo {
-    font-size: 42px;
+    font-size: 48px;
 }
 
 .sma-title {
-    font-size: 32px;
+    font-size: 34px;
     font-weight: 800;
-    margin-top: 5px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .sma-subtitle {
     color: #cbd5e1;
-    font-size: 15px;
+    font-size: 16px;
+    letter-spacing: 0.5px;
 }
 
 .sma-card {
-    padding: 20px;
-    border-radius: 20px;
-    background: rgba(15,23,42,0.75);
-    border: 1px solid rgba(255,255,255,0.07);
-    margin-bottom: 15px;
+    padding: 22px;
+    border-radius: 24px;
+    background: rgba(20, 27, 43, 0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(6px);
+    margin-bottom: 18px;
+    transition: 0.3s;
+}
+
+.sma-card:hover {
+    border-color: rgba(180, 130, 255, 0.3);
+    box-shadow: 0 4px 20px rgba(180, 130, 255, 0.1);
 }
 
 .sma-gold {
@@ -294,39 +309,61 @@ section[data-testid="stSidebar"] {
 }
 
 .sma-chat-user {
-    padding: 15px;
-    border-radius: 18px 18px 5px 18px;
-    background: rgba(251,191,36,0.10);
-    border: 1px solid rgba(251,191,36,0.18);
-    margin: 8px 0;
+    padding: 16px 20px;
+    border-radius: 20px 20px 6px 20px;
+    background: rgba(180, 130, 255, 0.12);
+    border: 1px solid rgba(180, 130, 255, 0.2);
+    margin: 10px 0;
+    color: #e2e8f0;
 }
 
 .sma-chat-ai {
-    padding: 15px;
-    border-radius: 18px 18px 18px 5px;
-    background: rgba(30,41,59,0.75);
+    padding: 16px 20px;
+    border-radius: 20px 20px 20px 6px;
+    background: rgba(30, 41, 59, 0.8);
     border: 1px solid rgba(255,255,255,0.06);
-    margin: 8px 0;
+    margin: 10px 0;
+    color: #f1f5f9;
 }
 
 div.stButton > button {
-    border-radius: 13px;
+    border-radius: 14px;
     font-weight: 700;
-    min-height: 44px;
+    min-height: 48px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #0b0f1a;
+    border: none;
+    transition: 0.3s;
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+}
+
+div.stButton > button:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(251, 191, 36, 0.5);
 }
 
 div.stDownloadButton > button {
-    border-radius: 13px;
+    border-radius: 14px;
     font-weight: 700;
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+    color: white;
+    border: none;
+    transition: 0.3s;
+}
+
+div.stDownloadButton > button:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
 }
 
 .sma-footer {
     text-align: center;
-    padding: 25px;
+    padding: 30px;
     color: #94a3b8;
-    font-size: 13px;
+    font-size: 14px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 30px;
 }
-
 </style>
 """,
     unsafe_allow_html=True,
@@ -393,6 +430,21 @@ def arabic_text(text):
         except Exception:
             pass
 
+    return text
+
+
+def prepare_tts_text(text):
+    """
+    تحسين النص قبل التحويل الصوتي لضمان نطق أوضح.
+    إزالة الرموز غير العربية، توحيد الترقيم.
+    """
+    if not text:
+        return ""
+
+    # حذف الأحرف الغير عربية مع الاحتفاظ بالعلامات الترقيمية الأساسية
+    text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', text)
+    # إزالة المسافات الزائدة
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
@@ -945,10 +997,16 @@ async def _edge_generate(
     text,
     voice,
     output_path,
+    rate=None,      # نسبة مئوية (+0% إلى +100%) للسرعة
+    pitch=None,     # نسبة مئوية للطبقة الصوتية
 ):
+    # تحضير النص
+    text = prepare_tts_text(text)
     communicator = edge_tts.Communicate(
         text,
         voice,
+        rate=rate,
+        pitch=pitch,
     )
 
     await communicator.save(
@@ -960,6 +1018,8 @@ def generate_edge_tts(
     text,
     voice,
     output_path=None,
+    rate="+0%",
+    pitch="+0Hz",
 ):
     if not EDGE_TTS_AVAILABLE:
         raise RuntimeError(
@@ -977,6 +1037,8 @@ def generate_edge_tts(
             text,
             voice,
             output_path,
+            rate=rate,
+            pitch=pitch,
         )
     )
 
@@ -1012,6 +1074,7 @@ def generate_gtts(
         )
         os.close(fd)
 
+    text = prepare_tts_text(text)
     tts = gTTS(
         text=text,
         lang="ar",
@@ -1033,12 +1096,14 @@ def generate_voice(
     text,
     engine,
     voice,
+    rate="+0%",
+    pitch="+0Hz",
 ):
     """
     ترتيب التشغيل:
-      Gemini
-      Edge
-      gTTS
+      Gemini (إذا كان engine = Gemini TTS)
+      Edge (إذا كان engine = Edge TTS)
+      gTTS (fallback)
     """
 
     errors = []
@@ -1070,6 +1135,8 @@ def generate_voice(
             path = generate_edge_tts(
                 text,
                 voice,
+                rate=rate,
+                pitch=pitch,
             )
 
             return path, "Edge TTS"
@@ -1517,13 +1584,15 @@ def create_reel(
     script,
     image_files=None,
     video_file=None,
-    voice_engine="Edge TTS",
+    voice_engine="Edge TTS",   # تم تغيير الافتراضي إلى Edge TTS
     voice_name="ar-SA-HamedNeural",
     duration=10,
     aspect="9:16",
     caption=None,
     music_file=None,
     music_volume=0.18,
+    rate="+0%",
+    pitch="+0Hz",
 ):
     if not MOVIEPY_AVAILABLE:
         raise RuntimeError(
@@ -1558,6 +1627,8 @@ def create_reel(
             script,
             voice_engine,
             voice_name,
+            rate=rate,
+            pitch=pitch,
         )
 
         voice_clip = AudioFileClip(
@@ -1878,10 +1949,10 @@ with st.sidebar:
             padding:10px 0 20px;
         ">
             <div style="font-size:48px;">🛍️</div>
-            <h2 style="margin:0;">
+            <h2 style="margin:0; color:#fbbf24;">
                 SaeedMarketAds
             </h2>
-            <div style="color:#fbbf24;">
+            <div style="color:#8b5cf6; font-weight:600;">
                 Saeed PostGen Studio
             </div>
         </div>
@@ -2318,314 +2389,4 @@ with tab_ad:
         st.divider()
 
         st.image(
-            st.session_state.last_ad_card,
-            use_container_width=True,
-        )
-
-        buffer = io.BytesIO()
-
-        st.session_state.last_ad_card.save(
-            buffer,
-            format="PNG",
-        )
-
-        st.download_button(
-            "⬇️ تنزيل بطاقة الإعلان",
-            data=buffer.getvalue(),
-            file_name="saeed_ad_card.png",
-            mime="image/png",
-            use_container_width=True,
-        )
-
-
-# ################################################################
-# TAB 4 — REELS
-# ################################################################
-
-with tab_reel:
-
-    st.markdown(
-        "## 🎥 صانع الريلز"
-    )
-
-    st.caption(
-        "حوّل النص + الصور أو الفيديو إلى Reel عمودي جاهز للنشر."
-    )
-
-    script = st.text_area(
-        "🎙️ النص الصوتي",
-        placeholder=(
-            "اكتب النص الذي تريد أن يسمعه الجمهور..."
-        ),
-        height=180,
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-
-        voice_engine = st.selectbox(
-            "محرك الصوت",
-            [
-                "Gemini TTS",
-                "Edge TTS",
-            ],
-        )
-
-    with c2:
-
-        if voice_engine == "Gemini TTS":
-
-            voice_label = st.selectbox(
-                "صوت Gemini",
-                list(GEMINI_VOICES.keys()),
-            )
-
-            voice_name = GEMINI_VOICES[
-                voice_label
-            ]
-
-        else:
-
-            voice_label = st.selectbox(
-                "صوت Edge",
-                list(EDGE_VOICES.keys()),
-            )
-
-            voice_name = EDGE_VOICES[
-                voice_label
-            ]
-
-    with c3:
-
-        aspect = st.selectbox(
-            "نسبة الفيديو",
-            [
-                "9:16",
-                "1:1",
-            ],
-        )
-
-    duration = st.slider(
-        "مدة الريلز",
-        min_value=5,
-        max_value=60,
-        value=10,
-        step=1,
-    )
-
-    caption_enabled = st.checkbox(
-        "إضافة نص على الفيديو",
-        value=True,
-    )
-
-    caption = ""
-
-    if caption_enabled:
-
-        caption = st.text_input(
-            "النص الظاهر على الفيديو",
-            value=(
-                extract_first_sentence(
-                    script
-                )
-                if script
-                else ""
-            ),
-        )
-
-    st.divider()
-
-    st.markdown(
-        "### 🖼️ مصادر الفيديو"
-    )
-
-    uploaded_video = st.file_uploader(
-        "فيديو اختياري (سيُستخدم بدل الصور تلقائياً إن تم رفعه)",
-        type=["mp4", "mov", "webm"],
-        key="reel_video_upload",
-    )
-
-    uploaded_images = None
-
-    if uploaded_video is None:
-
-        uploaded_images = st.file_uploader(
-            "صور الريلز (اختياري — يمكن اختيار أكثر من صورة)",
-            type=["png", "jpg", "jpeg", "webp"],
-            accept_multiple_files=True,
-            key="reel_images_upload",
-        )
-
-        if not uploaded_images:
-            st.info(
-                "لم يتم رفع صور — سيتم استخدام آخر بطاقة إعلان أو "
-                "صورة مولّدة إن وُجدت، وإلا خلفية افتراضية."
-            )
-
-    else:
-        st.caption(
-            "✅ تم اختيار فيديو — سيتم تجاهل الصور المرفوعة إن وُجدت."
-        )
-
-    st.divider()
-
-    st.markdown(
-        "### 🎵 موسيقى خلفية (اختياري)"
-    )
-
-    music_col1, music_col2 = st.columns(
-        [2, 1]
-    )
-
-    with music_col1:
-
-        uploaded_music = st.file_uploader(
-            "ملف الموسيقى",
-            type=["mp3", "wav", "m4a"],
-            key="reel_music_upload",
-        )
-
-    with music_col2:
-
-        music_volume = st.slider(
-            "مستوى الصوت",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.18,
-            step=0.02,
-        )
-
-    st.divider()
-
-    if st.button(
-        "🎬 إنشاء الريلز",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        if not script.strip():
-
-            st.warning(
-                "اكتب النص الصوتي أولاً."
-            )
-
-        elif not MOVIEPY_AVAILABLE:
-
-            st.error(
-                "MoviePy غير مثبت أو غير متوافق على هذا الخادم، "
-                "لا يمكن إنشاء الريلز حالياً."
-            )
-
-        else:
-
-            with st.spinner(
-                "جاري تجهيز الريلز... قد يستغرق دقيقة أو أكثر ⏳"
-            ):
-
-                try:
-
-                    video_path, engine_used = create_reel(
-                        script=script,
-                        image_files=uploaded_images,
-                        video_file=uploaded_video,
-                        voice_engine=voice_engine,
-                        voice_name=voice_name,
-                        duration=duration,
-                        aspect=aspect,
-                        caption=caption if caption_enabled else None,
-                        music_file=uploaded_music,
-                        music_volume=music_volume,
-                    )
-
-                    with open(video_path, "rb") as f:
-                        video_bytes = f.read()
-
-                    st.session_state.last_reel_video = video_bytes
-
-                    st.success(
-                        f"تم إنشاء الريلز بنجاح باستخدام {engine_used} 🎉"
-                    )
-
-                except Exception as exc:
-
-                    st.error(
-                        f"حدث خطأ أثناء إنشاء الريلز: {exc}"
-                    )
-
-    if st.session_state.last_reel_video is not None:
-
-        st.divider()
-
-        st.video(
-            st.session_state.last_reel_video
-        )
-
-        st.download_button(
-            "⬇️ تنزيل الريلز",
-            data=st.session_state.last_reel_video,
-            file_name="saeed_reel.mp4",
-            mime="video/mp4",
-            use_container_width=True,
-        )
-
-
-# ################################################################
-# TAB 5 — GALLERY
-# ################################################################
-
-with tab_gallery:
-
-    st.markdown(
-        "## 🖼️ المعرض"
-    )
-
-    st.caption(
-        "كل الصور وبطاقات الإعلان اللي أنشأتها في هذه الجلسة."
-    )
-
-    if not st.session_state.gallery:
-
-        st.info(
-            "المعرض فارغ حالياً. أنشئ صورة أو بطاقة إعلان لتظهر هنا."
-        )
-
-    else:
-
-        cols = st.columns(3)
-
-        for index, item in enumerate(
-            reversed(st.session_state.gallery)
-        ):
-
-            with cols[index % 3]:
-
-                st.image(
-                    item["data"],
-                    caption=item["title"],
-                    use_container_width=True,
-                )
-
-                st.download_button(
-                    "⬇️ تنزيل",
-                    data=item["data"],
-                    file_name=f"saeed_gallery_{index}.png",
-                    mime="image/png",
-                    use_container_width=True,
-                    key=f"gallery_download_{index}",
-                )
-
-
-# ================================================================
-# FOOTER
-# ================================================================
-
-st.markdown(
-    """
-    <div class="sma-footer">
-        Saeed PostGen Studio • SaeedMarketAds<br>
-        صُنع بـ ❤️ من سعيد المسوري (أبو رايد)
-    </div>
-    """,
-    unsafe_allow_html=True,
-    )
+            st.se
