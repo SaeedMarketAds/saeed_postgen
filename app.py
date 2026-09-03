@@ -128,7 +128,7 @@ st.set_page_config(
 
 APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.1"  # تم التحديث للإصدار الجديد
+VERSION = "4.1"
 
 DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
 GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
@@ -143,7 +143,6 @@ TARGET_SQUARE = (1080, 1080)
 # VOICES
 # ================================================================
 
-# تم ترتيب الأصوات بحيث يكون "حامد" هو الأول (الافتراضي)
 EDGE_VOICES = {
     "🇸🇦 حامد — سعودي": "ar-SA-HamedNeural",
     "🇸🇦 زارية — سعودية": "ar-SA-ZariyahNeural",
@@ -231,7 +230,7 @@ if "messages" not in st.session_state:
 
 
 # ================================================================
-# CSS - تحسين الألوان والتصميم
+# CSS
 # ================================================================
 
 st.markdown(
@@ -256,7 +255,6 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(180, 130, 255, 0.25);
 }
 
-/* تحسين البطاقات والعناصر */
 .sma-header {
     padding: 30px;
     border-radius: 28px;
@@ -302,10 +300,6 @@ section[data-testid="stSidebar"] {
 .sma-card:hover {
     border-color: rgba(180, 130, 255, 0.3);
     box-shadow: 0 4px 20px rgba(180, 130, 255, 0.1);
-}
-
-.sma-gold {
-    color: #fbbf24;
 }
 
 .sma-chat-user {
@@ -355,15 +349,6 @@ div.stDownloadButton > button:hover {
     transform: scale(1.02);
     box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
 }
-
-.sma-footer {
-    text-align: center;
-    padding: 30px;
-    color: #94a3b8;
-    font-size: 14px;
-    border-top: 1px solid rgba(255,255,255,0.05);
-    margin-top: 30px;
-}
 </style>
 """,
     unsafe_allow_html=True,
@@ -375,7 +360,6 @@ div.stDownloadButton > button:hover {
 # ================================================================
 
 def get_secret(*names):
-    """البحث عن المفتاح في Streamlit Secrets ثم Environment."""
     for name in names:
         try:
             value = st.secrets.get(name)
@@ -417,7 +401,6 @@ def clean_text(text):
 
 
 def arabic_text(text):
-    """تهيئة النص العربي للرسم داخل PIL."""
     if not text:
         return ""
 
@@ -434,16 +417,10 @@ def arabic_text(text):
 
 
 def prepare_tts_text(text):
-    """
-    تحسين النص قبل التحويل الصوتي لضمان نطق أوضح.
-    إزالة الرموز غير العربية، توحيد الترقيم.
-    """
     if not text:
         return ""
 
-    # حذف الأحرف الغير عربية مع الاحتفاظ بالعلامات الترقيمية الأساسية
     text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', text)
-    # إزالة المسافات الزائدة
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -486,25 +463,7 @@ def get_font(size=40, bold=True):
 # IMAGE HELPERS
 # ================================================================
 
-def rounded_rectangle(draw, xy, radius, fill, outline=None, width=1):
-    try:
-        draw.rounded_rectangle(
-            xy,
-            radius=radius,
-            fill=fill,
-            outline=outline,
-            width=width,
-        )
-    except Exception:
-        draw.rectangle(
-            xy,
-            fill=fill,
-            outline=outline,
-        )
-
-
 def fit_image_to_canvas(image, size):
-    """ملء مساحة canvas مع الحفاظ على النسبة."""
     image = image.convert("RGB")
 
     target_w, target_h = size
@@ -539,7 +498,6 @@ def fit_image_to_canvas(image, size):
 
 
 def wrap_text(draw, text, font, max_width):
-    """تقسيم النص إلى أسطر حسب عرض الصورة."""
     words = str(text).split()
     lines = []
     current = ""
@@ -602,7 +560,6 @@ def add_caption_band(
     caption,
     position="bottom",
 ):
-    """إضافة شريط نصي احترافي."""
     image = image.convert("RGBA")
 
     overlay = Image.new(
@@ -761,7 +718,6 @@ def add_to_gallery(image, title="تصميم Saeed"):
         }
     )
 
-    # منع تضخم الذاكرة
     if len(st.session_state.gallery) > 30:
         st.session_state.gallery = (
             st.session_state.gallery[-30:]
@@ -854,9 +810,6 @@ def gemini_generate_text(
 # ================================================================
 
 def run_async(coro):
-    """
-    تشغيل coroutine حتى إذا كان هناك event loop قائم.
-    """
     try:
         asyncio.get_running_loop()
 
@@ -902,14 +855,6 @@ def generate_gemini_tts(
     voice="Kore",
     output_path=None,
 ):
-    """
-    Gemini Native TTS.
-
-    Gemini TTS الحالي يستخدم:
-    gemini-3.1-flash-tts-preview
-    ويعيد PCM داخل output_audio.
-    """
-
     api_key = get_gemini_key()
 
     if not api_key:
@@ -997,10 +942,9 @@ async def _edge_generate(
     text,
     voice,
     output_path,
-    rate=None,      # نسبة مئوية (+0% إلى +100%) للسرعة
-    pitch=None,     # نسبة مئوية للطبقة الصوتية
+    rate=None,
+    pitch=None,
 ):
-    # تحضير النص
     text = prepare_tts_text(text)
     communicator = edge_tts.Communicate(
         text,
@@ -1099,18 +1043,7 @@ def generate_voice(
     rate="+0%",
     pitch="+0Hz",
 ):
-    """
-    ترتيب التشغيل:
-      Gemini (إذا كان engine = Gemini TTS)
-      Edge (إذا كان engine = Edge TTS)
-      gTTS (fallback)
-    """
-
     errors = []
-
-    # ------------------------------------------------------------
-    # GEMINI
-    # ------------------------------------------------------------
 
     if engine == "Gemini TTS":
         try:
@@ -1118,17 +1051,9 @@ def generate_voice(
                 text,
                 voice,
             )
-
             return path, "Gemini TTS"
-
         except Exception as exc:
-            errors.append(
-                f"Gemini: {exc}"
-            )
-
-    # ------------------------------------------------------------
-    # EDGE
-    # ------------------------------------------------------------
+            errors.append(f"Gemini: {exc}")
 
     if engine == "Edge TTS":
         try:
@@ -1138,34 +1063,19 @@ def generate_voice(
                 rate=rate,
                 pitch=pitch,
             )
-
             return path, "Edge TTS"
-
         except Exception as exc:
-            errors.append(
-                f"Edge: {exc}"
-            )
-
-    # ------------------------------------------------------------
-    # FALLBACK
-    # ------------------------------------------------------------
+            errors.append(f"Edge: {exc}")
 
     if GTTS_AVAILABLE:
         try:
-            path = generate_gtts(
-                text
-            )
-
+            path = generate_gtts(text)
             return path, "gTTS"
-
         except Exception as exc:
-            errors.append(
-                f"gTTS: {exc}"
-            )
+            errors.append(f"gTTS: {exc}")
 
     raise RuntimeError(
-        "تعذر إنشاء الصوت:\n"
-        + "\n".join(errors)
+        "تعذر إنشاء الصوت:\n" + "\n".join(errors)
     )
 
 
@@ -1182,9 +1092,7 @@ def build_ad_card(
     template_name,
     product_image=None,
 ):
-    template = TEMPLATES[
-        template_name
-    ]
+    template = TEMPLATES[template_name]
 
     W, H = TARGET_SQUARE
 
@@ -1194,31 +1102,16 @@ def build_ad_card(
         template["bg"],
     )
 
-    draw = ImageDraw.Draw(
-        canvas
-    )
-
-    # ------------------------------------------------------------
-    # Decorative glow
-    # ------------------------------------------------------------
-
     glow = Image.new(
         "RGBA",
         (W, H),
         (0, 0, 0, 0),
     )
 
-    glow_draw = ImageDraw.Draw(
-        glow
-    )
+    glow_draw = ImageDraw.Draw(glow)
 
     glow_draw.ellipse(
-        (
-            -200,
-            -200,
-            500,
-            500,
-        ),
+        (-200, -200, 500, 500),
         fill=(
             template["accent"][0],
             template["accent"][1],
@@ -1227,38 +1120,22 @@ def build_ad_card(
         ),
     )
 
-    glow = glow.filter(
-        ImageFilter.GaussianBlur(60)
-    )
+    glow = glow.filter(ImageFilter.GaussianBlur(60))
 
     canvas = Image.alpha_composite(
         canvas.convert("RGBA"),
         glow,
     ).convert("RGB")
 
-    draw = ImageDraw.Draw(
-        canvas
-    )
-
-    # ------------------------------------------------------------
-    # Header
-    # ------------------------------------------------------------
+    draw = ImageDraw.Draw(canvas)
 
     draw.rounded_rectangle(
-        (
-            50,
-            40,
-            W - 50,
-            150,
-        ),
+        (50, 40, W - 50, 150),
         radius=28,
         fill=template["accent"],
     )
 
-    header_font = get_font(
-        42,
-        True,
-    )
+    header_font = get_font(42, True)
 
     draw_centered_text(
         draw,
@@ -1269,41 +1146,18 @@ def build_ad_card(
         W,
     )
 
-    # ------------------------------------------------------------
-    # Product Image
-    # ------------------------------------------------------------
-
-    image_area = (
-        90,
-        190,
-        W - 90,
-        620,
-    )
+    image_area = (90, 190, W - 90, 620)
 
     if product_image is not None:
-
         try:
             product = fit_image_to_canvas(
                 product_image,
-                (
-                    image_area[2] - image_area[0],
-                    image_area[3] - image_area[1],
-                ),
+                (image_area[2] - image_area[0], image_area[3] - image_area[1]),
             )
-
-            canvas.paste(
-                product,
-                (
-                    image_area[0],
-                    image_area[1],
-                ),
-            )
-
+            canvas.paste(product, (image_area[0], image_area[1]))
         except Exception:
             pass
-
     else:
-
         draw.rounded_rectangle(
             image_area,
             radius=35,
@@ -1311,10 +1165,7 @@ def build_ad_card(
             width=3,
         )
 
-        emoji_font = get_font(
-            100,
-            True,
-        )
+        emoji_font = get_font(100, True)
 
         draw_centered_text(
             draw,
@@ -1325,14 +1176,7 @@ def build_ad_card(
             W,
         )
 
-    # ------------------------------------------------------------
-    # Product Name
-    # ------------------------------------------------------------
-
-    title_font = get_font(
-        62,
-        True,
-    )
+    title_font = get_font(62, True)
 
     draw_centered_text(
         draw,
@@ -1343,30 +1187,15 @@ def build_ad_card(
         W,
     )
 
-    # ------------------------------------------------------------
-    # Specs
-    # ------------------------------------------------------------
-
-    spec_font = get_font(
-        34,
-        False,
-    )
+    spec_font = get_font(34, False)
 
     specs = []
-
     if storage:
-        specs.append(
-            f"التخزين: {storage}"
-        )
-
+        specs.append(f"التخزين: {storage}")
     if ram:
-        specs.append(
-            f"الرام: {ram}"
-        )
+        specs.append(f"الرام: {ram}")
 
-    spec_text = "  •  ".join(
-        specs
-    )
+    spec_text = "  •  ".join(specs)
 
     if spec_text:
         draw_centered_text(
@@ -1378,16 +1207,7 @@ def build_ad_card(
             W,
         )
 
-    # ------------------------------------------------------------
-    # Price
-    # ------------------------------------------------------------
-
-    price_box = (
-        230,
-        840,
-        W - 230,
-        980,
-    )
+    price_box = (230, 840, W - 230, 980)
 
     draw.rounded_rectangle(
         price_box,
@@ -1395,10 +1215,7 @@ def build_ad_card(
         fill=template["accent"],
     )
 
-    price_font = get_font(
-        60,
-        True,
-    )
+    price_font = get_font(60, True)
 
     draw_centered_text(
         draw,
@@ -1409,59 +1226,27 @@ def build_ad_card(
         W,
     )
 
-    # ------------------------------------------------------------
-    # Trust badges
-    # ------------------------------------------------------------
-
-    badge_font = get_font(
-        27,
-        True,
-    )
-
-    badges = [
-        "✓ ضمان",
-        "✓ أصلي",
-        "✓ توصيل سريع",
-    ]
+    badge_font = get_font(27, True)
+    badges = ["✓ ضمان", "✓ أصلي", "✓ توصيل سريع"]
 
     x = 90
-
     for badge in badges:
-
         width = 270
-
         draw.rounded_rectangle(
-            (
-                x,
-                1030,
-                x + width,
-                1100,
-            ),
+            (x, 1030, x + width, 1100),
             radius=20,
             outline=template["accent"],
             width=2,
         )
-
         draw.text(
-            (
-                x + 20,
-                1048,
-            ),
+            (x + 20, 1048),
             arabic_text(badge),
             font=badge_font,
             fill=template["text"],
         )
-
         x += 300
 
-    # ------------------------------------------------------------
-    # Contact
-    # ------------------------------------------------------------
-
-    contact_font = get_font(
-        35,
-        True,
-    )
+    contact_font = get_font(35, True)
 
     draw_centered_text(
         draw,
@@ -1472,14 +1257,7 @@ def build_ad_card(
         W,
     )
 
-    # ------------------------------------------------------------
-    # Footer
-    # ------------------------------------------------------------
-
-    footer_font = get_font(
-        28,
-        False,
-    )
+    footer_font = get_font(28, False)
 
     draw_centered_text(
         draw,
@@ -1497,83 +1275,23 @@ def build_ad_card(
 # VIDEO HELPERS
 # ================================================================
 
-def fit_video_clip(
-    clip,
-    target_size,
-):
-    """
-    نسخة بسيطة ومتوافقة قدر الإمكان
-    مع MoviePy 1.x.
-    """
-
+def fit_video_clip(clip, target_size):
     target_w, target_h = target_size
-
-    src_w = clip.w
-    src_h = clip.h
+    src_w, src_h = clip.w, clip.h
 
     target_ratio = target_w / target_h
     source_ratio = src_w / src_h
 
     if source_ratio > target_ratio:
-
-        # الفيديو أعرض
-        new_h = target_h
-
-        clip = clip.resize(
-            height=new_h
-        )
-
-        new_w = clip.w
-
-        x1 = max(
-            0,
-            int((new_w - target_w) / 2),
-        )
-
-        clip = clip.crop(
-            x1=x1,
-            x2=x1 + target_w,
-        )
-
+        clip = clip.resize(height=target_h)
+        x1 = max(0, int((clip.w - target_w) / 2))
+        clip = clip.crop(x1=x1, x2=x1 + target_w)
     else:
-
-        new_w = target_w
-
-        clip = clip.resize(
-            width=new_w
-        )
-
-        new_h = clip.h
-
-        y1 = max(
-            0,
-            int((new_h - target_h) / 2),
-        )
-
-        clip = clip.crop(
-            y1=y1,
-            y2=y1 + target_h,
-        )
+        clip = clip.resize(width=target_w)
+        y1 = max(0, int((clip.h - target_h) / 2))
+        clip = clip.crop(y1=y1, y2=y1 + target_h)
 
     return clip
-
-
-def extract_first_sentence(text):
-    if not text:
-        return ""
-
-    parts = re.split(
-        r"[.!؟!\n]+",
-        text.strip(),
-    )
-
-    for part in parts:
-        part = part.strip()
-
-        if part:
-            return part[:120]
-
-    return text[:120]
 
 
 # ================================================================
@@ -1584,7 +1302,7 @@ def create_reel(
     script,
     image_files=None,
     video_file=None,
-    voice_engine="Edge TTS",   # تم تغيير الافتراضي إلى Edge TTS
+    voice_engine="Edge TTS",
     voice_name="ar-SA-HamedNeural",
     duration=10,
     aspect="9:16",
@@ -1595,34 +1313,16 @@ def create_reel(
     pitch="+0Hz",
 ):
     if not MOVIEPY_AVAILABLE:
-        raise RuntimeError(
-            "MoviePy غير مثبت أو غير متوافق."
-        )
+        raise RuntimeError("MoviePy غير مثبت أو غير متوافق.")
 
-    temp_dir = tempfile.mkdtemp(
-        prefix="saeed_reel_"
-    )
-
-    target_size = (
-        TARGET_VERTICAL
-        if aspect == "9:16"
-        else TARGET_SQUARE
-    )
-
-    output_path = os.path.join(
-        temp_dir,
-        "saeed_reel.mp4",
-    )
+    temp_dir = tempfile.mkdtemp(prefix="saeed_reel_")
+    target_size = TARGET_VERTICAL if aspect == "9:16" else TARGET_SQUARE
+    output_path = os.path.join(temp_dir, "saeed_reel.mp4")
 
     clips = []
     opened_resources = []
 
     try:
-
-        # ========================================================
-        # VOICE
-        # ========================================================
-
         voice_path, engine_used = generate_voice(
             script,
             voice_engine,
@@ -1631,289 +1331,96 @@ def create_reel(
             pitch=pitch,
         )
 
-        voice_clip = AudioFileClip(
-            voice_path
-        )
-
-        opened_resources.append(
-            voice_clip
-        )
-
-        actual_duration = min(
-            float(duration),
-            float(voice_clip.duration),
-        )
-
-        # ========================================================
-        # VIDEO
-        # ========================================================
+        voice_clip = AudioFileClip(voice_path)
+        opened_resources.append(voice_clip)
 
         if video_file is not None:
+            video_path = os.path.join(temp_dir, "input_video.mp4")
+            with open(video_path, "wb") as f:
+                f.write(video_file.getbuffer())
 
-            video_path = os.path.join(
-                temp_dir,
-                "input_video.mp4",
-            )
-
-            with open(
-                video_path,
-                "wb",
-            ) as f:
-                f.write(
-                    video_file.getbuffer()
-                )
-
-            source = VideoFileClip(
-                video_path
-            )
-
-            opened_resources.append(
-                source
-            )
+            source = VideoFileClip(video_path)
+            opened_resources.append(source)
 
             if source.duration < duration:
-
-                loops = int(
-                    duration / source.duration
-                ) + 1
-
-                video = source.loop(
-                    n=loops
-                )
-
+                loops = int(duration / source.duration) + 1
+                video = source.loop(n=loops)
             else:
                 video = source
 
-            video = video.subclip(
-                0,
-                min(
-                    duration,
-                    video.duration,
-                ),
-            )
-
-            video = fit_video_clip(
-                video,
-                target_size,
-            )
-
+            video = video.subclip(0, min(duration, video.duration))
+            video = fit_video_clip(video, target_size)
             video = video.without_audio()
-
-            clips = [video]
-
             final_video = video
 
         else:
-
-            # ====================================================
-            # IMAGES
-            # ====================================================
-
             pil_images = []
 
             if image_files:
-
                 for uploaded in image_files:
-
                     data = uploaded.getvalue()
-
-                    image = Image.open(
-                        io.BytesIO(data)
-                    ).convert("RGB")
-
-                    pil_images.append(
-                        image
-                    )
-
+                    image = Image.open(io.BytesIO(data)).convert("RGB")
+                    pil_images.append(image)
             elif st.session_state.last_ad_card is not None:
-
-                pil_images.append(
-                    st.session_state.last_ad_card
-                )
-
+                pil_images.append(st.session_state.last_ad_card)
             elif st.session_state.last_generated_image is not None:
-
-                pil_images.append(
-                    st.session_state.last_generated_image
-                )
-
+                pil_images.append(st.session_state.last_generated_image)
             else:
+                fallback = Image.new("RGB", target_size, (15, 23, 42))
+                pil_images.append(fallback)
 
-                fallback = Image.new(
-                    "RGB",
-                    target_size,
-                    (15, 23, 42),
-                )
+            seconds_per_image = duration / len(pil_images)
 
-                pil_images.append(
-                    fallback
-                )
-
-            seconds_per_image = (
-                duration / len(pil_images)
-            )
-
-            for index, image in enumerate(
-                pil_images
-            ):
-
-                frame = fit_image_to_canvas(
-                    image,
-                    target_size,
-                )
-
+            for index, image in enumerate(pil_images):
+                frame = fit_image_to_canvas(image, target_size)
                 if caption:
-                    frame = add_caption_band(
-                        frame,
-                        caption,
-                    )
+                    frame = add_caption_band(frame, caption)
 
-                frame_path = os.path.join(
-                    temp_dir,
-                    f"frame_{index}.jpg",
-                )
+                frame_path = os.path.join(temp_dir, f"frame_{index}.jpg")
+                frame.save(frame_path, quality=95)
 
-                frame.save(
-                    frame_path,
-                    quality=95,
-                )
+                clip = ImageClip(frame_path).set_duration(seconds_per_image)
+                clips.append(clip)
 
-                clip = ImageClip(
-                    frame_path
-                ).set_duration(
-                    seconds_per_image
-                )
-
-                clips.append(
-                    clip
-                )
-
-            final_video = concatenate_videoclips(
-                clips,
-                method="compose",
-            )
-
-        # ========================================================
-        # CAPTION ON VIDEO
-        # ========================================================
+            final_video = concatenate_videoclips(clips, method="compose")
 
         if video_file is not None and caption:
-
-            overlay_image = Image.new(
-                "RGBA",
-                target_size,
-                (0, 0, 0, 0),
-            )
-
             overlay_image = add_caption_band(
-                Image.new(
-                    "RGB",
-                    target_size,
-                    (0, 0, 0),
-                ),
+                Image.new("RGB", target_size, (0, 0, 0)),
                 caption,
             ).convert("RGBA")
 
-            overlay_path = os.path.join(
-                temp_dir,
-                "caption.png",
-            )
+            overlay_path = os.path.join(temp_dir, "caption.png")
+            overlay_image.save(overlay_path)
 
-            overlay_image.save(
-                overlay_path
-            )
-
-            caption_clip = (
-                ImageClip(
-                    overlay_path
-                )
-                .set_duration(
-                    final_video.duration
-                )
-            )
-
+            caption_clip = ImageClip(overlay_path).set_duration(final_video.duration)
             final_video = CompositeVideoClip(
-                [
-                    final_video,
-                    caption_clip,
-                ],
-                size=target_size,
+                [final_video, caption_clip], size=target_size
             )
 
-        # ========================================================
-        # AUDIO
-        # ========================================================
-
-        voice_for_video = voice_clip
-
-        if voice_clip.duration > duration:
-            voice_for_video = voice_clip.subclip(
-                0,
-                duration,
-            )
-
+        voice_for_video = (
+            voice_clip.subclip(0, duration)
+            if voice_clip.duration > duration
+            else voice_clip
+        )
         final_audio = voice_for_video
 
-        # --------------------------------------------------------
-        # Music
-        # --------------------------------------------------------
-
         if music_file is not None:
+            music_path = os.path.join(temp_dir, "music.mp3")
+            with open(music_path, "wb") as f:
+                f.write(music_file.getbuffer())
 
-            music_path = os.path.join(
-                temp_dir,
-                "music.mp3",
-            )
-
-            with open(
-                music_path,
-                "wb",
-            ) as f:
-                f.write(
-                    music_file.getbuffer()
-                )
-
-            music_clip = AudioFileClip(
-                music_path
-            )
-
-            opened_resources.append(
-                music_clip
-            )
+            music_clip = AudioFileClip(music_path)
+            opened_resources.append(music_clip)
 
             if music_clip.duration < duration:
+                loops = int(duration / music_clip.duration) + 1
+                music_clip = music_clip.loop(n=loops)
 
-                loops = int(
-                    duration / music_clip.duration
-                ) + 1
+            music_clip = music_clip.subclip(0, duration).volumex(music_volume)
+            final_audio = CompositeAudioClip([voice_for_video, music_clip])
 
-                music_clip = music_clip.loop(
-                    n=loops
-                )
-
-            music_clip = music_clip.subclip(
-                0,
-                duration,
-            )
-
-            music_clip = music_clip.volumex(
-                music_volume
-            )
-
-            final_audio = CompositeAudioClip(
-                [
-                    voice_for_video,
-                    music_clip,
-                ]
-            )
-
-        final_video = final_video.set_audio(
-            final_audio
-        )
-
-        # ========================================================
-        # EXPORT
-        # ========================================================
+        final_video = final_video.set_audio(final_audio)
 
         final_video.write_videofile(
             output_path,
@@ -1928,7 +1435,6 @@ def create_reel(
         return output_path, engine_used
 
     finally:
-
         for resource in opened_resources:
             try:
                 resource.close()
@@ -1941,85 +1447,51 @@ def create_reel(
 # ================================================================
 
 with st.sidebar:
-
     st.markdown(
         """
-        <div style="
-            text-align:center;
-            padding:10px 0 20px;
-        ">
+        <div style="text-align:center; padding:10px 0 20px;">
             <div style="font-size:48px;">🛍️</div>
-            <h2 style="margin:0; color:#fbbf24;">
-                SaeedMarketAds
-            </h2>
-            <div style="color:#8b5cf6; font-weight:600;">
-                Saeed PostGen Studio
-            </div>
+            <h2 style="margin:0; color:#fbbf24;">SaeedMarketAds</h2>
+            <div style="color:#8b5cf6; font-weight:600;">Saeed PostGen Studio</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.divider()
-
-    st.markdown(
-        "### ⚙️ حالة النظام"
-    )
+    st.markdown("### ⚙️ حالة النظام")
 
     if GEMINI_AVAILABLE:
-        st.success(
-            "Gemini SDK: جاهز"
-        )
+        st.success("Gemini SDK: جاهز")
     else:
-        st.warning(
-            "Gemini SDK: غير مثبت"
-        )
+        st.warning("Gemini SDK: غير مثبت")
 
     if EDGE_TTS_AVAILABLE:
-        st.success(
-            "Edge TTS: جاهز"
-        )
+        st.success("Edge TTS: جاهز")
     else:
-        st.warning(
-            "Edge TTS: غير مثبت"
-        )
+        st.warning("Edge TTS: غير مثبت")
 
     if MOVIEPY_AVAILABLE:
-        st.success(
-            "MoviePy: جاهز"
-        )
+        st.success("MoviePy: جاهز")
     else:
-        st.warning(
-            "MoviePy: غير مثبت"
-        )
+        st.warning("MoviePy: غير مثبت")
 
     st.divider()
 
     st.markdown(
         f"""
-        **الإصدار:** {VERSION}.0
-
+        **الإصدار:** {VERSION}
         **الهوية:** Saeed AI
-
         **المنصة:** SaeedMarketAds
-
-        **الشعار:**
-        دليلك الذكي للتسويق العالمي 🌐
+        **الشعار:** دليلك الذكي للتسويق العالمي 🌐
         """
     )
 
     st.divider()
 
-    if st.button(
-        "🗑️ مسح المعرض",
-        use_container_width=True,
-    ):
+    if st.button("🗑️ مسح المعرض", use_container_width=True):
         st.session_state.gallery = []
-
-        st.success(
-            "تم مسح المعرض."
-        )
-
+        st.success("تم مسح المعرض.")
         st.rerun()
 
 
@@ -2030,17 +1502,9 @@ with st.sidebar:
 st.markdown(
     """
     <div class="sma-header">
-
         <div class="sma-logo">🎬</div>
-
-        <div class="sma-title">
-            Saeed PostGen Studio
-        </div>
-
-        <div class="sma-subtitle">
-            استوديو سعيد الذكي لصناعة الإعلانات والصور والريلز
-        </div>
-
+        <div class="sma-title">Saeed PostGen Studio</div>
+        <div class="sma-subtitle">استوديو سعيد الذكي لصناعة الإعلانات والصور والريلز</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -2067,79 +1531,45 @@ tab_ai, tab_image, tab_ad, tab_reel, tab_gallery = st.tabs(
 # ################################################################
 
 with tab_ai:
-
-    st.markdown(
-        "## 🤖 Saeed AI"
-    )
-
-    st.caption(
-        "اكتب فكرتك، وسأحولها إلى محتوى إعلاني أو سينمائي جاهز."
-    )
+    st.markdown("## 🤖 Saeed AI")
+    st.caption("اكتب فكرتك، وسأحولها إلى محتوى إعلاني أو سينمائي جاهز.")
 
     for message in st.session_state.messages:
-
         if message["role"] == "user":
-
             st.markdown(
                 f"""
                 <div class="sma-chat-user">
-                    <b>أنت</b><br>
-                    {message["content"]}
+                    <b>أنت</b><br>{message["content"]}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-
         else:
-
             st.markdown(
                 f"""
                 <div class="sma-chat-ai">
-                    <b>🤖 Saeed AI</b><br>
-                    {message["content"]}
+                    <b>🤖 Saeed AI</b><br>{message["content"]}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-    prompt = st.chat_input(
-        "اكتب فكرة الإعلان أو الفيديو..."
-    )
+    prompt = st.chat_input("اكتب فكرة الإعلان أو الفيديو...")
 
     if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-        st.session_state.messages.append(
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        )
-
-        with st.spinner(
-            "Saeed AI يفكر..."
-        ):
-
+        with st.spinner("Saeed AI يفكر..."):
             try:
-
-                reply = gemini_generate_text(
-                    prompt
-                )
-
+                reply = gemini_generate_text(prompt)
             except Exception as exc:
-
                 reply = (
                     "⚠️ تعذر الاتصال بـ Gemini حالياً.\n\n"
                     f"التفاصيل: `{exc}`\n\n"
                     "يمكنك متابعة استخدام مولد الصور وبقية الأدوات."
                 )
 
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": reply,
-            }
-        )
-
+        st.session_state.messages.append({"role": "assistant", "content": reply})
         st.rerun()
 
 
@@ -2148,110 +1578,52 @@ with tab_ai:
 # ################################################################
 
 with tab_image:
+    st.markdown("## 🎨 مولد الصور الفوري")
+    st.caption("أنشئ صورة إعلانية احترافية ثم أضفها مباشرة إلى المعرض أو استخدمها في الريلز.")
 
-    st.markdown(
-        "## 🎨 مولد الصور الفوري"
-    )
-
-    st.caption(
-        "أنشئ صورة إعلانية احترافية ثم أضفها مباشرة إلى المعرض أو استخدمها في الريلز."
-    )
-
-    col1, col2 = st.columns(
-        [2, 1]
-    )
+    col1, col2 = st.columns([2, 1])
 
     with col1:
-
         image_prompt = st.text_area(
             "وصف الصورة",
-            placeholder=(
-                "مثال: هاتف ذكي فاخر باللون الأسود والذهبي "
-                "على سطح زجاجي مع إضاءة استوديو احترافية"
-            ),
+            placeholder="مثال: هاتف ذكي فاخر باللون الأسود والذهبي على سطح زجاجي مع إضاءة استوديو احترافية",
             height=150,
         )
 
     with col2:
-
         image_format = st.selectbox(
             "المقاس",
-            [
-                "مربع 1:1",
-                "عمودي 9:16",
-                "أفقي 16:9",
-            ],
+            ["مربع 1:1", "عمودي 9:16", "أفقي 16:9"],
         )
 
-    if st.button(
-        "✨ توليد الصورة",
-        type="primary",
-        use_container_width=True,
-    ):
-
+    if st.button("✨ توليد الصورة", type="primary", use_container_width=True):
         if not image_prompt.strip():
-
-            st.warning(
-                "اكتب وصف الصورة أولاً."
-            )
-
+            st.warning("اكتب وصف الصورة أولاً.")
         else:
-
             if image_format == "مربع 1:1":
                 width, height = 1024, 1024
-
             elif image_format == "عمودي 9:16":
                 width, height = 768, 1365
-
             else:
                 width, height = 1365, 768
 
-            with st.spinner(
-                "جاري إنشاء الصورة..."
-            ):
-
+            with st.spinner("جاري إنشاء الصورة..."):
                 try:
-
-                    image, image_url = (
-                        generate_pollinations_image(
-                            image_prompt,
-                            width,
-                            height,
-                        )
+                    image, image_url = generate_pollinations_image(
+                        image_prompt, width, height
                     )
-
                     st.session_state.last_generated_image = image
-
-                    add_to_gallery(
-                        image,
-                        "صورة مولدة",
-                    )
-
-                    st.success(
-                        "تم إنشاء الصورة وإضافتها إلى المعرض."
-                    )
-
+                    add_to_gallery(image, "صورة مولدة")
+                    st.success("تم إنشاء الصورة وإضافتها إلى المعرض.")
                 except Exception as exc:
-
-                    st.error(
-                        f"تعذر إنشاء الصورة: {exc}"
-                    )
+                    st.error(f"تعذر إنشاء الصورة: {exc}")
 
     if st.session_state.last_generated_image is not None:
-
         st.divider()
-
-        st.image(
-            st.session_state.last_generated_image,
-            use_container_width=True,
-        )
+        st.image(st.session_state.last_generated_image, use_container_width=True)
 
         buffer = io.BytesIO()
-
-        st.session_state.last_generated_image.save(
-            buffer,
-            format="PNG",
-        )
+        st.session_state.last_generated_image.save(buffer, format="PNG")
 
         st.download_button(
             "⬇️ تنزيل الصورة",
@@ -2267,96 +1639,41 @@ with tab_image:
 # ################################################################
 
 with tab_ad:
+    st.markdown("## 📱 صانع بطاقة الإعلان")
+    st.caption("أنشئ بطاقة إعلان مربعة جاهزة للنشر على الشبكات الاجتماعية.")
 
-    st.markdown(
-        "## 📱 صانع بطاقة الإعلان"
-    )
-
-    st.caption(
-        "أنشئ بطاقة إعلان مربعة جاهزة للنشر على الشبكات الاجتماعية."
-    )
-
-    left, right = st.columns(
-        [1.3, 1]
-    )
+    left, right = st.columns([1.3, 1])
 
     with left:
-
-        product_name = st.text_input(
-            "اسم المنتج",
-            "هاتف ذكي جديد",
-        )
-
-        storage = st.text_input(
-            "التخزين",
-            "256GB",
-        )
-
-        ram = st.text_input(
-            "الرام",
-            "12GB",
-        )
-
-        price = st.text_input(
-            "السعر",
-            "999",
-        )
-
-        contact = st.text_input(
-            "رقم واتساب",
-            "05xxxxxxxx",
-        )
+        product_name = st.text_input("اسم المنتج", "هاتف ذكي جديد")
+        storage = st.text_input("التخزين", "256GB")
+        ram = st.text_input("الرام", "12GB")
+        price = st.text_input("السعر", "999")
+        contact = st.text_input("رقم واتساب", "05xxxxxxxx")
 
     with right:
-
-        template_name = st.selectbox(
-            "التصميم",
-            list(TEMPLATES.keys()),
-        )
-
+        template_name = st.selectbox("التصميم", list(TEMPLATES.keys()))
         product_upload = st.file_uploader(
             "صورة المنتج",
-            type=[
-                "png",
-                "jpg",
-                "jpeg",
-                "webp",
-            ],
+            type=["png", "jpg", "jpeg", "webp"],
             key="ad_product_upload",
         )
 
         product_image = None
-
         if product_upload:
-
             try:
-                product_image = Image.open(
-                    product_upload
-                ).convert("RGB")
-
+                product_image = Image.open(product_upload).convert("RGB")
                 st.image(
                     product_image,
                     caption="صورة المنتج",
                     use_container_width=True,
                 )
-
             except Exception:
-                st.warning(
-                    "تعذر قراءة صورة المنتج."
-                )
+                st.warning("تعذر قراءة صورة المنتج.")
 
-    if st.button(
-        "🚀 إنشاء بطاقة الإعلان",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        with st.spinner(
-            "جاري تصميم بطاقة الإعلان..."
-        ):
-
+    if st.button("🚀 إنشاء بطاقة الإعلان", type="primary", use_container_width=True):
+        with st.spinner("جاري تصميم بطاقة الإعلان..."):
             try:
-
                 card = build_ad_card(
                     product_name,
                     storage,
@@ -2366,36 +1683,15 @@ with tab_ad:
                     template_name,
                     product_image,
                 )
-
                 st.session_state.last_ad_card = card
-
-                add_to_gallery(
-                    card,
-                    f"بطاقة {product_name}",
-                )
-
-                st.success(
-                    "تم إنشاء البطاقة وإضافتها إلى المعرض."
-                )
-
+                add_to_gallery(card, f"بطاقة {product_name}")
+                st.success("تم إنشاء البطاقة وإضافتها إلى المعرض.")
             except Exception as exc:
-
-                st.error(
-                    f"حدث خطأ: {exc}"
-                )
+                st.error(f"حدث خطأ: {exc}")
 
     if st.session_state.last_ad_card is not None:
-
         st.divider()
-
-            if st.session_state.last_ad_card is not None:
-
-        st.divider()
-
-        st.image(
-            st.session_state.last_ad_card,
-            use_container_width=True,
-        )
+        st.image(st.session_state.last_ad_card, use_container_width=True)
 
         buffer = io.BytesIO()
         st.session_state.last_ad_card.save(buffer, format="PNG")
@@ -2410,71 +1706,98 @@ with tab_ad:
 
 
 # ################################################################
-# TAB 4 — REEL GENERATOR
+# TAB 4 — REEL MAKER
 # ################################################################
 
 with tab_reel:
+    st.markdown("## 🎥 صانع الريلز الإعلاني")
+    st.caption("دمج الصور أو الفيديو مع التعليق الصوتي والموسيقى لإنشاء مقطع ريلز متكامل.")
 
-    st.markdown("## 🎥 صانع الريلز والإنستغرام")
-    st.caption("أنشئ فيديو قصير بصوت ذكاء اصطناعي مع صورك أو فيديو خاص بك.")
+    col1, col2 = st.columns([1.3, 1])
 
-    script = st.text_area(
-        "نص الإعلان (السيناريو)",
-        "احصل الآن على أقوى العروض من سوق سعيد! جودة عالية وأسعار لا تقبل المنافسة.",
-        height=100,
-    )
+    with col1:
+        script_text = st.text_area(
+            "النص الصوتي (الإعلان)",
+            "أهلاً بكم في سوق سعيد! نقدم لكم أحدث الهواتف الذكية بأفضل الأسعار وأعلى جودة. تواصل معنا الآن على الواتساب للحصول على عرضك الخاص!",
+            height=140,
+        )
 
-    r_col1, r_col2 = st.columns(2)
+        caption_text = st.text_input(
+            "شريط النص السريع (الظاهر على الفيديو)",
+            "عروض ترويجية حصرياً في سوق سعيد 🚀",
+        )
 
-    with r_col1:
+        images_upload = st.file_uploader(
+            "صور الفيديو (اختياري - يمكنك التحديد متعدد)",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+        )
+
+        video_upload = st.file_uploader(
+            "أو ارفع فيديو أساسي بدل الصور",
+            type=["mp4", "mov", "avi"],
+        )
+
+    with col2:
         voice_engine = st.selectbox(
-            "محرك الصوت",
+            "محرك الصوت (TTS)",
             ["Edge TTS", "Gemini TTS"],
         )
 
         if voice_engine == "Edge TTS":
-            voice_name = st.selectbox("الصوت", list(EDGE_VOICES.keys()))
-            selected_voice = EDGE_VOICES[voice_name]
+            voice_choice = st.selectbox("اختر الصوت", list(EDGE_VOICES.keys()))
+            voice_id = EDGE_VOICES[voice_choice]
         else:
-            voice_name = st.selectbox("الصوت", list(GEMINI_VOICES.keys()))
-            selected_voice = GEMINI_VOICES[voice_name]
+            voice_choice = st.selectbox("اختر الصوت", list(GEMINI_VOICES.keys()))
+            voice_id = GEMINI_VOICES[voice_choice]
 
-        duration = st.slider("مدة الفيديو (ثواني)", 5, 30, 10)
+        duration = st.slider("مدة الفيديو (بالثواني)", 5, 30, 10)
+        aspect_ratio = st.selectbox("أبعاد الفيديو", ["9:16", "1:1"])
 
-    with r_col2:
-        aspect = st.selectbox("المقاس", ["9:16", "1:1"])
-        caption = st.text_input("نص التوضيح على الفيديو (الكابشن)", "عرض خاص من سوق سعيد")
-        
-        uploaded_imgs = st.file_uploader(
-            "رفع صور للفيديو",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=True,
+        music_upload = st.file_uploader(
+            "موسيقى خلفية (اختياري)",
+            type=["mp3", "wav"],
         )
 
-    if st.button("🎬 إنشاء الريل", type="primary", use_container_width=True):
-        if not script.strip():
-            st.warning("يرجى كتابة نص الإعلان أولاً.")
+        music_vol = st.slider("مستوى صوت الموسيقى", 0.0, 0.5, 0.15, step=0.01)
+
+    if st.button("🎬 إنشاء الريلز الآن", type="primary", use_container_width=True):
+        if not script_text.strip():
+            st.warning("يرجى كتابة النص الصوتي أولاً.")
         else:
-            with st.spinner("جاري معالجة الفيديو والصوت..."):
+            with st.spinner("جاري معالجة الصوت وإنشاء مقطع الفيديو... قد يستغرق ذلك دقيقة."):
                 try:
                     reel_path, engine_used = create_reel(
-                        script=script,
-                        image_files=uploaded_imgs,
+                        script=script_text,
+                        image_files=images_upload,
+                        video_file=video_upload,
                         voice_engine=voice_engine,
-                        voice_name=selected_voice,
+                        voice_name=voice_id,
                         duration=duration,
-                        aspect=aspect,
-                        caption=caption,
+                        aspect=aspect_ratio,
+                        caption=caption_text,
+                        music_file=music_upload,
+                        music_volume=music_vol,
                     )
-                    
+
                     st.session_state.last_reel_video = reel_path
-                    st.success(f"تم إنشاء الريل بنجاح باستخدام {engine_used}!")
+                    st.success(f"تم إنشاء الريلز بنجاح باستخدام {engine_used}! 🎉")
+
                 except Exception as exc:
-                    st.error(f"حدث خطأ أثناء إنشاء الريل: {exc}")
+                    st.error(f"تعذر إنشاء الريلز: {exc}")
 
     if st.session_state.last_reel_video and os.path.exists(st.session_state.last_reel_video):
         st.divider()
         st.video(st.session_state.last_reel_video)
+
+        with open(st.session_state.last_reel_video, "rb") as v_file:
+            st.download_button(
+                "⬇️ تنزيل فيديو الريلز (MP4)",
+                data=v_file.read(),
+                file_name="saeed_reel_video.mp4",
+                mime="video/mp4",
+                use_container_width=True,
+            )
 
 
 # ################################################################
@@ -2482,27 +1805,22 @@ with tab_reel:
 # ################################################################
 
 with tab_gallery:
-
     st.markdown("## 🖼️ معرض التصاميم")
+    st.caption("جميع البطاقات والصور التي تم إنشاؤها خلال هذه الجلسة.")
 
-    if st.session_state.last_ad_card is not None:
-
-        st.divider()
-
-        st.image(
-            st.session_state.last_ad_card,
-            caption="بطاقة الإعلان المجهزة",
-            use_container_width=True,
-        )
-
-        buf = io.BytesIO()
-        st.session_state.last_ad_card.save(buf, format="PNG")
-
-        st.download_button(
-            "⬇️ تنزيل بطاقة الإعلان",
-            data=buf.getvalue(),
-            file_name="saeed_ad_card.png",
-            mime="image/png",
-            use_container_width=True,
-        )
-
+    if not st.session_state.gallery:
+        st.info("لا توجد تصاميم في المعرض حتى الآن. أنشئ صورة أو بطاقة إعلان لتظهر هنا.")
+    else:
+        cols = st.columns(3)
+        for idx, item in enumerate(reversed(st.session_state.gallery)):
+            with cols[idx % 3]:
+                img = bytes_to_image(item["data"])
+                st.image(img, caption=item["title"], use_container_width=True)
+                st.download_button(
+                    f"⬇️ تنزيل #{len(st.session_state.gallery) - idx}",
+                    data=item["data"],
+                    file_name=f"saeed_gallery_{idx+1}.png",
+                    mime="image/png",
+                    key=f"dl_gal_{idx}",
+                    use_container_width=True,
+                )
