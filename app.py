@@ -1,15 +1,6 @@
 # ================================================================
-# Saeed PostGen Studio
+# Saeed PostGen Studio - Ultra Edition
 # SaeedMarketAds | سوق سعيد
-# ================================================================
-# تطبيق Streamlit موحد ونظيف
-#
-# الأقسام:
-#   1) Saeed AI
-#   2) مولد الصور
-#   3) بطاقة الإعلان
-#   4) صانع الريلز
-#   5) المعرض
 # ================================================================
 
 import asyncio
@@ -24,11 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 
 # ================================================================
-# OPTIONAL LIBRARIES
+# LIBRARIES LOAD & FALLBACKS
 # ================================================================
 
 try:
@@ -63,27 +54,19 @@ except Exception:
     get_display = None
     ARABIC_SUPPORT = False
 
-# MoviePy compatibility
+# MoviePy V1 & V2 Compatibility Matrix
 MOVIEPY_AVAILABLE = False
 try:
     from moviepy.editor import (
-        AudioFileClip,
-        CompositeAudioClip,
-        CompositeVideoClip,
-        ImageClip,
-        VideoFileClip,
-        concatenate_videoclips,
+        AudioFileClip, CompositeAudioClip, CompositeVideoClip,
+        ImageClip, VideoFileClip, concatenate_videoclips
     )
     MOVIEPY_AVAILABLE = True
 except Exception:
     try:
         from moviepy import (
-            AudioFileClip,
-            CompositeAudioClip,
-            CompositeVideoClip,
-            ImageClip,
-            VideoFileClip,
-            concatenate_videoclips,
+            AudioFileClip, CompositeAudioClip, CompositeVideoClip,
+            ImageClip, VideoFileClip, concatenate_videoclips
         )
         MOVIEPY_AVAILABLE = True
     except Exception:
@@ -91,7 +74,7 @@ except Exception:
 
 
 # ================================================================
-# PAGE CONFIG
+# CONFIG & CONSTANTS
 # ================================================================
 
 st.set_page_config(
@@ -101,19 +84,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
-# ================================================================
-# CONSTANTS
-# ================================================================
-
 APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.2"
+VERSION = "4.5 Ultra"
 
-# تم التحديث إلى gemini-2.5-flash لضمان الاستقرار وعدم حدوث 503
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
-
+GEMINI_TTS_MODEL = "gemini-2.5-flash-tts-preview"
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
 
 TARGET_VERTICAL = (1080, 1920)
@@ -121,7 +97,7 @@ TARGET_SQUARE = (1080, 1080)
 
 
 # ================================================================
-# VOICES
+# VOICES & TEMPLATES
 # ================================================================
 
 EDGE_VOICES = {
@@ -141,149 +117,70 @@ GEMINI_VOICES = {
     "Charon — معلوماتي": "Charon",
     "Leda — شبابي": "Leda",
     "Aoede — هادئ": "Aoede",
-    "Achernar — ناعم": "Achernar",
-    "Alnilam — رسمي": "Alnilam",
-    "Gacrux — ناضج": "Gacrux",
     "Sulafat — دافئ": "Sulafat",
-    "Achird — ودود": "Achird",
 }
-
-
-# ================================================================
-# AD TEMPLATES
-# ================================================================
 
 TEMPLATES = {
-    "ذهبي فاخر": {
-        "bg": (15, 23, 42),
-        "accent": (251, 191, 36),
-        "text": (255, 255, 255),
-        "sub": (205, 205, 205),
-    },
-    "أزرق تقني": {
-        "bg": (8, 20, 40),
-        "accent": (56, 189, 248),
-        "text": (255, 255, 255),
-        "sub": (185, 205, 225),
-    },
-    "أخضر عصري": {
-        "bg": (10, 30, 24),
-        "accent": (52, 211, 153),
-        "text": (255, 255, 255),
-        "sub": (185, 220, 205),
-    },
-    "أحمر جريء": {
-        "bg": (35, 12, 12),
-        "accent": (248, 113, 113),
-        "text": (255, 255, 255),
-        "sub": (220, 190, 190),
-    },
+    "ذهبي فاخر": {"bg": (15, 23, 42), "accent": (251, 191, 36), "text": (255, 255, 255), "sub": (205, 205, 205)},
+    "أزرق تقني": {"bg": (8, 20, 40), "accent": (56, 189, 248), "text": (255, 255, 255), "sub": (185, 205, 225)},
+    "أخضر عصري": {"bg": (10, 30, 24), "accent": (52, 211, 153), "text": (255, 255, 255), "sub": (185, 220, 205)},
+    "أحمر جريء": {"bg": (35, 12, 12), "accent": (248, 113, 113), "text": (255, 255, 255), "sub": (220, 190, 190)},
 }
 
 
 # ================================================================
-# SESSION STATE
+# SESSION STATE INITIALIZATION
 # ================================================================
 
-if "gallery" not in st.session_state:
-    st.session_state.gallery = []
-
-if "last_ad_card" not in st.session_state:
-    st.session_state.last_ad_card = None
-
-if "last_generated_image" not in st.session_state:
-    st.session_state.last_generated_image = None
-
-if "last_reel_video" not in st.session_state:
-    st.session_state.last_reel_video = None
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": (
-                "أهلاً بك في **Saeed PostGen Studio** 🎬\n\n"
-                "أنا Saeed AI، أساعدك في كتابة الإعلان، "
-                "تجهيز النص، وصناعة المحتوى التسويقي."
-            ),
-        }
-    ]
+for key, default in [
+    ("gallery", []),
+    ("last_ad_card", None),
+    ("last_generated_image", None),
+    ("last_reel_video", None),
+    ("messages", [{"role": "assistant", "content": "أهلاً بك في **Saeed PostGen Studio** 🎬\nكيف أمكنني مساعدتك في خطتك التسويقية اليوم؟"}]),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 
 # ================================================================
-# CSS
+# STYLING (CSS)
 # ================================================================
 
 st.markdown(
     """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Cairo', sans-serif;
-}
-
+html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
 .stApp {
-    background:
-        radial-gradient(circle at 70% 20%, rgba(180, 130, 255, 0.08), transparent 60%),
-        radial-gradient(circle at 30% 80%, rgba(251, 191, 36, 0.05), transparent 60%),
-        linear-gradient(145deg, #0b0f1a 0%, #141b2b 50%, #1a1030 100%);
+    background: radial-gradient(circle at 70% 20%, rgba(180, 130, 255, 0.08), transparent 60%),
+                radial-gradient(circle at 30% 80%, rgba(251, 191, 36, 0.05), transparent 60%),
+                linear-gradient(145deg, #0b0f1a 0%, #141b2b 50%, #1a1030 100%);
 }
-
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0b0f1a 0%, #161d2f 100%);
-    border-right: 1px solid rgba(180, 130, 255, 0.25);
-}
-
 .sma-header {
-    padding: 30px;
-    border-radius: 28px;
+    padding: 25px; border-radius: 20px;
     background: linear-gradient(135deg, rgba(180, 130, 255, 0.15), rgba(15, 23, 42, 0.9));
     border: 1px solid rgba(180, 130, 255, 0.25);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    margin-bottom: 25px;
-    backdrop-filter: blur(4px);
+    margin-bottom: 20px; backdrop-filter: blur(5px);
 }
-
-.sma-logo { font-size: 48px; }
 .sma-title {
-    font-size: 34px;
-    font-weight: 800;
+    font-size: 32px; font-weight: 800;
     background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
-.sma-subtitle { color: #cbd5e1; font-size: 16px; letter-spacing: 0.5px; }
-
+.sma-chat-user {
+    padding: 14px 18px; border-radius: 16px 16px 2px 16px;
+    background: rgba(180, 130, 255, 0.15); border: 1px solid rgba(180, 130, 255, 0.2);
+    margin: 8px 0; color: #e2e8f0;
+}
+.sma-chat-ai {
+    padding: 14px 18px; border-radius: 16px 16px 16px 2px;
+    background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.08);
+    margin: 8px 0; color: #f1f5f9;
+}
 div.stButton > button {
-    border-radius: 14px;
-    font-weight: 700;
-    min-height: 48px;
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    color: #0b0f1a;
-    border: none;
-    transition: 0.3s;
-    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
-}
-
-div.stButton > button:hover {
-    transform: scale(1.02);
-    box-shadow: 0 6px 20px rgba(251, 191, 36, 0.5);
-}
-
-div.stDownloadButton > button {
-    border-radius: 14px;
-    font-weight: 700;
-    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-    color: white;
-    border: none;
-    transition: 0.3s;
-}
-
-div.stDownloadButton > button:hover {
-    transform: scale(1.02);
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+    border-radius: 12px; font-weight: 700; min-height: 46px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #0b0f1a; border: none;
 }
 </style>
 """,
@@ -292,331 +189,233 @@ div.stDownloadButton > button:hover {
 
 
 # ================================================================
-# HELPERS
+# CORE UTILITIES
 # ================================================================
 
 def get_secret(*names):
     for name in names:
-        try:
-            value = st.secrets.get(name)
-            if value:
-                return str(value).strip()
-        except Exception:
-            pass
-        value = os.getenv(name)
-        if value:
-            return value.strip()
+        val = st.secrets.get(name) or os.getenv(name)
+        if val:
+            return str(val).strip()
     return ""
 
-
-def get_gemini_key():
-    return get_secret("GEMINI_API_KEY", "GEMINI_MAIN_KEY")
-
-
 def clean_text(text):
-    if not text:
-        return ""
-    text = str(text)
-    text = re.sub(r"```(?:text|markdown|python)?", "", text, flags=re.IGNORECASE)
-    text = text.replace("```", "")
-    return text.strip()
-
+    if not text: return ""
+    text = re.sub(r"```(?:text|markdown|python)?", "", str(text), flags=re.IGNORECASE)
+    return text.replace("```", "").strip()
 
 def arabic_text(text):
-    if not text:
-        return ""
-    text = str(text)
+    if not text: return ""
     if ARABIC_SUPPORT:
         try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            pass
-    return text
-
+            return get_display(arabic_reshaper.reshape(str(text)))
+        except Exception: pass
+    return str(text)
 
 def prepare_tts_text(text):
-    if not text:
-        return ""
-    text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-
-# ================================================================
-# FONTS
-# ================================================================
-
-FONT_BOLD_PATHS = [
-    "fonts/Cairo-Bold.ttf",
-    "fonts/Tajawal-Bold.ttf",
-    "fonts/Amiri-Bold.ttf",
-    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
-]
-
-FONT_REGULAR_PATHS = [
-    "fonts/Cairo-Regular.ttf",
-    "fonts/Tajawal-Regular.ttf",
-    "fonts/Amiri-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-]
-
+    if not text: return ""
+    text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', str(text))
+    return re.sub(r'\s+', ' ', text).strip()
 
 def get_font(size=40, bold=True):
-    paths = FONT_BOLD_PATHS if bold else FONT_REGULAR_PATHS
+    paths = [
+        "fonts/Cairo-Bold.ttf" if bold else "fonts/Cairo-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"
+    ]
     for path in paths:
-        try:
-            if os.path.exists(path):
-                return ImageFont.truetype(path, size)
-        except Exception:
-            continue
+        if os.path.exists(path):
+            try: return ImageFont.truetype(path, size)
+            except Exception: continue
     return ImageFont.load_default()
 
 
 # ================================================================
-# IMAGE HELPERS
-# ================================================================
-
-def fit_image_to_canvas(image, size, mode="contain", bg_color=(15, 23, 42)):
-    """
-    تعديل دالة الاحتواء لتضمن ظهور الهاتف بالكامل دون اقتصاص (Contain).
-    """
-    image = image.convert("RGB")
-    target_w, target_h = size
-    src_w, src_h = image.size
-
-    if mode == "cover":
-        scale = max(target_w / src_w, target_h / src_h)
-        new_size = (int(src_w * scale), int(src_h * scale))
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
-        left = max(0, (image.width - target_w) // 2)
-        top = max(0, (image.height - target_h) // 2)
-        return image.crop((left, top, left + target_w, top + target_h))
-    else:
-        # Contain Mode - إظهار كامل الجهاز بنفس الأبعاد بمنتصف المساحة
-        scale = min(target_w / src_w, target_h / src_h)
-        new_w, new_h = int(src_w * scale), int(src_h * scale)
-        resized_img = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-        canvas = Image.new("RGB", (target_w, target_h), bg_color)
-        paste_x = (target_w - new_w) // 2
-        paste_y = (target_h - new_h) // 2
-        canvas.paste(resized_img, (paste_x, paste_y))
-        return canvas
-
-
-def wrap_text(draw, text, font, max_width):
-    words = str(text).split()
-    lines = []
-    current = ""
-    for word in words:
-        test = word if not current else current + " " + word
-        bbox = draw.textbbox((0, 0), arabic_text(test), font=font)
-        width = bbox[2] - bbox[0]
-        if width <= max_width:
-            current = test
-        else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    return lines
-
-
-def draw_centered_text(draw, text, y, font, fill, canvas_width):
-    rendered = arabic_text(text)
-    bbox = draw.textbbox((0, 0), rendered, font=font)
-    width = bbox[2] - bbox[0]
-    x = (canvas_width - width) // 2
-    draw.text((x, y), rendered, font=font, fill=fill)
-
-
-def add_caption_band(image, caption, position="bottom"):
-    image = image.convert("RGBA")
-    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    font = get_font(46, True)
-
-    max_width = image.width - 100
-    lines = wrap_text(draw, caption, font, max_width)[:3]
-
-    line_height = 65
-    padding = 25
-    band_height = len(lines) * line_height + padding * 2
-    y0 = 0 if position == "top" else image.height - band_height
-
-    draw.rectangle((0, y0, image.width, y0 + band_height), fill=(0, 0, 0, 170))
-
-    y = y0 + padding
-    for line in lines:
-        rendered = arabic_text(line)
-        bbox = draw.textbbox((0, 0), rendered, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (image.width - tw) // 2
-        draw.text((x, y), rendered, font=font, fill=(255, 255, 255, 255))
-        y += line_height
-
-    return Image.alpha_composite(image, overlay).convert("RGB")
-
-
-# ================================================================
-# POLLINATIONS
-# ================================================================
-
-def build_pollinations_url(prompt, width=1024, height=1024):
-    encoded = urllib.parse.quote(prompt, safe="")
-    return f"{POLLINATIONS_BASE}{encoded}?width={width}&height={height}&nologo=true"
-
-
-def generate_pollinations_image(prompt, width=1024, height=1024):
-    enhanced_prompt = (
-        "Full phone visible, center frame, professional commercial product photography, "
-        "studio lighting, detailed back design, no cropped body, high resolution, " + prompt
-    )
-    url = build_pollinations_url(enhanced_prompt, width, height)
-    response = requests.get(url, timeout=120, headers={"User-Agent": "SaeedMarketAds/4.2"})
-    response.raise_for_status()
-    image = Image.open(io.BytesIO(response.content)).convert("RGB")
-    return image, url
-
-
-# ================================================================
-# GALLERY
-# ================================================================
-
-def add_to_gallery(image, title="تصميم Saeed"):
-    if image is None:
-        return
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    st.session_state.gallery.append({"title": title, "data": buffer.getvalue()})
-    if len(st.session_state.gallery) > 30:
-        st.session_state.gallery = st.session_state.gallery[-30:]
-
-
-def bytes_to_image(data):
-    return Image.open(io.BytesIO(data)).convert("RGB")
-
-
-# ================================================================
-# GEMINI TEXT
+# ENGINE IMPLEMENTATIONS
 # ================================================================
 
 @st.cache_resource
-def get_gemini_client(api_key):
-    if not GEMINI_AVAILABLE or not api_key:
-        return None
-    return genai.Client(api_key=api_key)
-
+def get_gemini_client():
+    key = get_secret("GEMINI_API_KEY", "GEMINI_MAIN_KEY")
+    if GEMINI_AVAILABLE and key:
+        return genai.Client(api_key=key)
+    return None
 
 def gemini_generate_text(prompt, model=DEFAULT_GEMINI_MODEL):
-    api_key = get_gemini_key()
-    if not api_key:
-        raise RuntimeError("لم يتم العثور على GEMINI_API_KEY.")
-
-    client = get_gemini_client(api_key)
-    if client is None:
-        raise RuntimeError("مكتبة google-genai غير مثبتة.")
-
-    system_instruction = """
-أنت Saeed AI داخل منصة SaeedMarketAds.
-دورك:
-- مساعد تسويقي ذكي ومستشار إعلانات.
-- اكتب إعلانات احترافية متوافقة مع السوق اليمني والخليجي والعربي.
-- اجعل النصوص واضحة، جذابة ومباشرة.
-"""
-    response = client.models.generate_content(
+    client = get_gemini_client()
+    if not client:
+        raise RuntimeError("مفتاح GEMINI_API_KEY غير متاح أو مكتبة google-genai غير مثبتة.")
+    
+    sys_instruction = "أنت Saeed AI، المساعد الذكي الخاص بمنصة SaeedMarketAds للتسويق الرقمي وإدارة المحتوى."
+    res = client.models.generate_content(
         model=model,
         contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.7,
-            max_output_tokens=1800,
-        ),
+        config=types.GenerateContentConfig(system_instruction=sys_instruction, temperature=0.7)
     )
+    return clean_text(getattr(res, "text", ""))
 
-    text = getattr(response, "text", None)
-    if not text:
-        raise RuntimeError("Gemini لم يرجع نصاً.")
-    return clean_text(text)
+def generate_pollinations_image(prompt, width=1024, height=1024):
+    enhanced = f"Commercial product photography, studio setup, 8k resolution, ultra detailed, {prompt}"
+    url = f"{POLLINATIONS_BASE}{urllib.parse.quote(enhanced)}?width={width}&height={height}&nologo=true"
+    res = requests.get(url, timeout=60, headers={"User-Agent": "SaeedMarketAds/4.5"})
+    res.raise_for_status()
+    return Image.open(io.BytesIO(res.content)).convert("RGB"), url
+
+def run_async(coro):
+    try:
+        return asyncio.run(coro)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
+
+async def _edge_tts_process(text, voice, out_path, rate="+0%", pitch="+0Hz"):
+    comm = edge_tts.Communicate(prepare_tts_text(text), voice, rate=rate, pitch=pitch)
+    await comm.save(out_path)
+
+def generate_voice(text, engine, voice, rate="+0%", pitch="+0Hz"):
+    fd, out_path = tempfile.mkstemp(suffix=".mp3" if engine != "Gemini TTS" else ".wav")
+    os.close(fd)
+    
+    if engine == "Edge TTS" and EDGE_TTS_AVAILABLE:
+        run_async(_edge_tts_process(text, voice, out_path, rate, pitch))
+        return out_path, "Edge TTS"
+        
+    if GTTS_AVAILABLE:
+        tts = gTTS(text=prepare_tts_text(text), lang="ar", slow=False)
+        tts.save(out_path)
+        return out_path, "gTTS"
+        
+    raise RuntimeError("تعذر معالجة النص الصوتي، المحركات المحددة غير متاحة.")
 
 
 # ================================================================
-# AD CARD BUILDER
+# CANVAS & GRAPHICS BUILDER
 # ================================================================
+
+def fit_image_to_canvas(image, size):
+    image = image.convert("RGB")
+    tw, th = size
+    sw, sh = image.size
+    scale = max(tw / sw, th / sh)
+    nw, nh = int(sw * scale), int(sh * scale)
+    image = image.resize((nw, nh), Image.Resampling.LANCZOS)
+    left, top = (nw - tw) // 2, (nh - th) // 2
+    return image.crop((left, top, left + tw, top + th))
+
+def draw_centered_text(draw, text, y, font, fill, width):
+    rendered = arabic_text(text)
+    bbox = draw.textbbox((0, 0), rendered, font=font)
+    tw = bbox[2] - bbox[0]
+    draw.text(((width - tw) // 2, y), rendered, font=font, fill=fill)
 
 def build_ad_card(product_name, storage, ram, price, contact, template_name, product_image=None):
-    template = TEMPLATES[template_name]
+    tmpl = TEMPLATES[template_name]
     W, H = TARGET_SQUARE
-
-    canvas = Image.new("RGB", (W, H), template["bg"])
-    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    glow_draw = ImageDraw.Draw(glow)
-    glow_draw.ellipse((-200, -200, 500, 500), fill=(*template["accent"], 45))
-    glow = glow.filter(ImageFilter.GaussianBlur(60))
-
-    canvas = Image.alpha_composite(canvas.convert("RGBA"), glow).convert("RGB")
+    canvas = Image.new("RGB", (W, H), tmpl["bg"])
     draw = ImageDraw.Draw(canvas)
 
-    draw.rounded_rectangle((50, 40, W - 50, 150), radius=28, fill=template["accent"])
-    header_font = get_font(42, True)
-    draw_centered_text(draw, "SaeedMarketAds • عرض حصري", 70, header_font, template["bg"], W)
+    # Header
+    draw.rounded_rectangle((50, 40, W - 50, 140), radius=20, fill=tmpl["accent"])
+    draw_centered_text(draw, "SaeedMarketAds • العرض الذهبي", 65, get_font(38, True), tmpl["bg"], W)
 
-    image_area = (90, 190, W - 90, 620)
-    box_w = image_area[2] - image_area[0]
-    box_h = image_area[3] - image_area[1]
-
-    if product_image is not None:
-        try:
-            # ضمان احتواء الصورة بالكامل داخل الإطار بدون قص الجهاز
-            product = fit_image_to_canvas(product_image, (box_w, box_h), mode="contain", bg_color=template["bg"])
-            canvas.paste(product, (image_area[0], image_area[1]))
-        except Exception:
-            pass
+    # Image Container
+    img_box = (90, 170, W - 90, 600)
+    if product_image:
+        fit_img = fit_image_to_canvas(product_image, (img_box[2] - img_box[0], img_box[3] - img_box[1]))
+        canvas.paste(fit_img, (img_box[0], img_box[1]))
     else:
-        draw.rounded_rectangle(image_area, radius=35, outline=template["accent"], width=3)
-        emoji_font = get_font(100, True)
-        draw_centered_text(draw, "📱", 330, emoji_font, template["accent"], W)
+        draw.rounded_rectangle(img_box, radius=25, outline=tmpl["accent"], width=2)
+        draw_centered_text(draw, "📦", 330, get_font(80, True), tmpl["accent"], W)
 
-    title_font = get_font(56, True)
-    draw_centered_text(draw, product_name, 665, title_font, template["text"], W)
+    # Specs & Info
+    draw_centered_text(draw, product_name, 640, get_font(54, True), tmpl["text"], W)
+    specs = f"التخزين: {storage}  |  الرام: {ram}" if storage or ram else ""
+    draw_centered_text(draw, specs, 720, get_font(30, False), tmpl["sub"], W)
 
-    spec_font = get_font(32, False)
-    specs = []
-    if storage: specs.append(f"التخزين: {storage}")
-    if ram: specs.append(f"الرام: {ram}")
-    spec_text = "  •  ".join(specs)
+    # Price Tag
+    draw.rounded_rectangle((200, 790, W - 200, 920), radius=25, fill=tmpl["accent"])
+    draw_centered_text(draw, f"{price} ريال", 825, get_font(50, True), tmpl["bg"], W)
 
-    if spec_text:
-        draw_centered_text(draw, spec_text, 755, spec_font, template["sub"], W)
-
-    price_box = (230, 830, W - 230, 970)
-    draw.rounded_rectangle(price_box, radius=30, fill=template["accent"])
-    price_font = get_font(58, True)
-    draw_centered_text(draw, f"{price} ريال", 860, price_font, template["bg"], W)
-
-    badge_font = get_font(26, True)
-    badges = ["✓ ضمان", "✓ أصلي", "✓ توصيل سريع"]
-    x = 90
-    for badge in badges:
-        draw.rounded_rectangle((x, 1010, x + 270, 1080), radius=20, outline=template["accent"], width=2)
-        draw.text((x + 20, 1028), arabic_text(badge), font=badge_font, fill=template["text"])
-        x += 300
-
-    contact_font = get_font(34, True)
-    draw_centered_text(draw, f"واتساب: {contact}", 1120, contact_font, template["text"], W)
-
-    footer_font = get_font(26, False)
-    draw_centered_text(draw, "سوق سعيد • دليلك الذكي للتسويق العالمي 🌐", 1220, footer_font, template["sub"], W)
+    # Footer
+    draw_centered_text(draw, f"للتواصل والطلب: {contact}", 970, get_font(32, True), tmpl["text"], W)
+    draw_centered_text(draw, "سوق سعيد • دليلك الذكي للتسويق الرقمي", 1020, get_font(24, False), tmpl["sub"], W)
 
     return canvas
 
 
 # ================================================================
-# INTERFACE MAIN
+# UI PRESENTATION & TABS
 # ================================================================
 
-# (بقية التبويبات والتفاعلات تدار بسلاسة عبر Streamlit)
+with st.sidebar:
+    st.markdown("<h2 style='text-align:center; color:#fbbf24;'>Saeed Studio</h2>", unsafe_allow_html=True)
+    st.caption(f"الإصدار: {VERSION}")
+    st.divider()
+    if st.button("🗑️ مسح الذاكرة المؤقتة", use_container_width=True):
+        st.session_state.gallery = []
+        st.rerun()
+
+st.markdown("""
+<div class="sma-header">
+    <div class="sma-title">🎬 Saeed PostGen Studio</div>
+    <div style="color:#cbd5e1;">الاستوديو الذكي المتكامل لإدارة وإنشاء المحتوى التسويقي</div>
+</div>
+""", unsafe_allow_html=True)
+
+tab_ai, tab_image, tab_ad, tab_gallery = st.tabs(["💬 الذكاء الاصطناعي", "🎨 توليد الصور", "📱 بطاقة الإعلان", "🖼️ المعرض"])
+
+# --- TAB 1: Saeed AI ---
+with tab_ai:
+    for msg in st.session_state.messages:
+        cls = "sma-chat-user" if msg["role"] == "user" else "sma-chat-ai"
+        st.markdown(f'<div class="{cls}"><b>{"أنت" if msg["role"] == "user" else "🤖 Saeed AI"}</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
+
+    if user_in := st.chat_input("اكتب أفكارك التسويقية هنا..."):
+        st.session_state.messages.append({"role": "user", "content": user_in})
+        try:
+            bot_res = gemini_generate_text(user_in)
+        except Exception as e:
+            bot_res = f"⚠️ خطأ أثناء المعالجة: {e}"
+        st.session_state.messages.append({"role": "assistant", "content": bot_res})
+        st.rerun()
+
+# --- TAB 2: Image Gen ---
+with tab_image:
+    prompt_in = st.text_area("وصف الصورة التسويقية المطلوبة:", placeholder="هاتف أبل آيفون باللون البرتقالي على خلفية سوداء استوديو...")
+    if st.button("✨ إنتاج الصورة الان", type="primary"):
+        if prompt_in:
+            with st.spinner("جاري إنشاء التصميم..."):
+                img, _ = generate_pollinations_image(prompt_in)
+                st.session_state.last_generated_image = img
+                st.session_state.gallery.append({"title": "صورة مولدة", "image": img})
+                st.image(img, use_container_width=True)
+
+# --- TAB 3: Ad Card ---
+with tab_ad:
+    col1, col2 = st.columns(2)
+    with col1:
+        p_name = st.text_input("اسم المنتج", "iPhone 17 Pro Max")
+        p_storage = st.text_input("المساحة", "512GB")
+        p_ram = st.text_input("الرام", "16GB")
+    with col2:
+        p_price = st.text_input("السعر", "4800")
+        p_contact = st.text_input("رقم التواصل", "967770000000")
+        p_tmpl = st.selectbox("القالب التصميمي", list(TEMPLATES.keys()))
+    
+    p_img_file = st.file_uploader("رفع صورة المنتج (اختياري)", type=["png", "jpg", "jpeg"])
+    p_img = Image.open(p_img_file).convert("RGB") if p_img_file else None
+
+    if st.button("🚀 صمم البطاقة", type="primary"):
+        card = build_ad_card(p_name, p_storage, p_ram, p_price, p_contact, p_tmpl, p_img)
+        st.session_state.last_ad_card = card
+        st.session_state.gallery.append({"title": f"إعلان - {p_name}", "image": card})
+        st.image(card, use_container_width=True)
+
+# --- TAB 4: Gallery ---
+with tab_gallery:
+    if not st.session_state.gallery:
+        st.info("المعرض فارغ حالياً.")
+    else:
+        cols = st.columns(3)
+        for idx, item in enumerate(reversed(st.session_state.gallery)):
+            with cols[idx % 3]:
+                st.image(item["image"], caption=item["title"], use_container_width=True)
