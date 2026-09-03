@@ -1,8 +1,12 @@
 streamlit
-google-generativeai
-Pillow
+Pillow>=10.0.0
+requests
+google-genai
+edge-tts>=6.1.19
+gTTS>=2.5.1
+moviepy
 arabic-reshaper
 python-bidi
-edge-tts
-moviepy
-requests
+imageio
+imageio-ffmpeg
+numpy
