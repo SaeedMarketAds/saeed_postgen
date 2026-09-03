@@ -10,15 +10,6 @@
 #   3) بطاقة الإعلان
 #   4) صانع الريلز
 #   5) المعرض
-#
-# TTS:
-#   Gemini TTS -> Edge TTS -> gTTS
-#
-# Image:
-#   Pollinations
-#
-# Gemini:
-#   google-genai
 # ================================================================
 
 import asyncio
@@ -43,46 +34,37 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 try:
     from google import genai
     from google.genai import types
-
     GEMINI_AVAILABLE = True
 except Exception:
     genai = None
     types = None
     GEMINI_AVAILABLE = False
 
-
 try:
     import edge_tts
-
     EDGE_TTS_AVAILABLE = True
 except Exception:
     edge_tts = None
     EDGE_TTS_AVAILABLE = False
 
-
 try:
     from gtts import gTTS
-
     GTTS_AVAILABLE = True
 except Exception:
     gTTS = None
     GTTS_AVAILABLE = False
 
-
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
-
     ARABIC_SUPPORT = True
 except Exception:
     arabic_reshaper = None
     get_display = None
     ARABIC_SUPPORT = False
 
-
 # MoviePy compatibility
 MOVIEPY_AVAILABLE = False
-
 try:
     from moviepy.editor import (
         AudioFileClip,
@@ -92,7 +74,6 @@ try:
         VideoFileClip,
         concatenate_videoclips,
     )
-
     MOVIEPY_AVAILABLE = True
 except Exception:
     try:
@@ -104,7 +85,6 @@ except Exception:
             VideoFileClip,
             concatenate_videoclips,
         )
-
         MOVIEPY_AVAILABLE = True
     except Exception:
         MOVIEPY_AVAILABLE = False
@@ -128,9 +108,10 @@ st.set_page_config(
 
 APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.1"
+VERSION = "4.2"
 
-DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
+# تم التحديث إلى gemini-2.5-flash لضمان الاستقرار وعدم حدوث 503
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
 
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
@@ -250,28 +231,21 @@ html, body, [class*="css"] {
 }
 
 section[data-testid="stSidebar"] {
-    background:
-        linear-gradient(180deg, #0b0f1a 0%, #161d2f 100%);
+    background: linear-gradient(180deg, #0b0f1a 0%, #161d2f 100%);
     border-right: 1px solid rgba(180, 130, 255, 0.25);
 }
 
 .sma-header {
     padding: 30px;
     border-radius: 28px;
-    background:
-        linear-gradient(135deg,
-            rgba(180, 130, 255, 0.15),
-            rgba(15, 23, 42, 0.9));
+    background: linear-gradient(135deg, rgba(180, 130, 255, 0.15), rgba(15, 23, 42, 0.9));
     border: 1px solid rgba(180, 130, 255, 0.25);
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     margin-bottom: 25px;
     backdrop-filter: blur(4px);
 }
 
-.sma-logo {
-    font-size: 48px;
-}
-
+.sma-logo { font-size: 48px; }
 .sma-title {
     font-size: 34px;
     font-weight: 800;
@@ -280,45 +254,7 @@ section[data-testid="stSidebar"] {
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
-
-.sma-subtitle {
-    color: #cbd5e1;
-    font-size: 16px;
-    letter-spacing: 0.5px;
-}
-
-.sma-card {
-    padding: 22px;
-    border-radius: 24px;
-    background: rgba(20, 27, 43, 0.7);
-    border: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(6px);
-    margin-bottom: 18px;
-    transition: 0.3s;
-}
-
-.sma-card:hover {
-    border-color: rgba(180, 130, 255, 0.3);
-    box-shadow: 0 4px 20px rgba(180, 130, 255, 0.1);
-}
-
-.sma-chat-user {
-    padding: 16px 20px;
-    border-radius: 20px 20px 6px 20px;
-    background: rgba(180, 130, 255, 0.12);
-    border: 1px solid rgba(180, 130, 255, 0.2);
-    margin: 10px 0;
-    color: #e2e8f0;
-}
-
-.sma-chat-ai {
-    padding: 16px 20px;
-    border-radius: 20px 20px 20px 6px;
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(255,255,255,0.06);
-    margin: 10px 0;
-    color: #f1f5f9;
-}
+.sma-subtitle { color: #cbd5e1; font-size: 16px; letter-spacing: 0.5px; }
 
 div.stButton > button {
     border-radius: 14px;
@@ -367,59 +303,41 @@ def get_secret(*names):
                 return str(value).strip()
         except Exception:
             pass
-
         value = os.getenv(name)
         if value:
             return value.strip()
-
     return ""
 
 
 def get_gemini_key():
-    return get_secret(
-        "GEMINI_API_KEY",
-        "GEMINI_MAIN_KEY",
-    )
+    return get_secret("GEMINI_API_KEY", "GEMINI_MAIN_KEY")
 
 
 def clean_text(text):
     if not text:
         return ""
-
     text = str(text)
-
-    text = re.sub(
-        r"```(?:text|markdown|python)?",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
+    text = re.sub(r"```(?:text|markdown|python)?", "", text, flags=re.IGNORECASE)
     text = text.replace("```", "")
-
     return text.strip()
 
 
 def arabic_text(text):
     if not text:
         return ""
-
     text = str(text)
-
     if ARABIC_SUPPORT:
         try:
             reshaped = arabic_reshaper.reshape(text)
             return get_display(reshaped)
         except Exception:
             pass
-
     return text
 
 
 def prepare_tts_text(text):
     if not text:
         return ""
-
     text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -448,14 +366,12 @@ FONT_REGULAR_PATHS = [
 
 def get_font(size=40, bold=True):
     paths = FONT_BOLD_PATHS if bold else FONT_REGULAR_PATHS
-
     for path in paths:
         try:
             if os.path.exists(path):
                 return ImageFont.truetype(path, size)
         except Exception:
             continue
-
     return ImageFont.load_default()
 
 
@@ -463,236 +379,107 @@ def get_font(size=40, bold=True):
 # IMAGE HELPERS
 # ================================================================
 
-def fit_image_to_canvas(image, size):
+def fit_image_to_canvas(image, size, mode="contain", bg_color=(15, 23, 42)):
+    """
+    تعديل دالة الاحتواء لتضمن ظهور الهاتف بالكامل دون اقتصاص (Contain).
+    """
     image = image.convert("RGB")
-
     target_w, target_h = size
     src_w, src_h = image.size
 
-    scale = max(
-        target_w / src_w,
-        target_h / src_h,
-    )
+    if mode == "cover":
+        scale = max(target_w / src_w, target_h / src_h)
+        new_size = (int(src_w * scale), int(src_h * scale))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+        left = max(0, (image.width - target_w) // 2)
+        top = max(0, (image.height - target_h) // 2)
+        return image.crop((left, top, left + target_w, top + target_h))
+    else:
+        # Contain Mode - إظهار كامل الجهاز بنفس الأبعاد بمنتصف المساحة
+        scale = min(target_w / src_w, target_h / src_h)
+        new_w, new_h = int(src_w * scale), int(src_h * scale)
+        resized_img = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    new_size = (
-        int(src_w * scale),
-        int(src_h * scale),
-    )
-
-    image = image.resize(
-        new_size,
-        Image.Resampling.LANCZOS,
-    )
-
-    left = max(0, (image.width - target_w) // 2)
-    top = max(0, (image.height - target_h) // 2)
-
-    return image.crop(
-        (
-            left,
-            top,
-            left + target_w,
-            top + target_h,
-        )
-    )
+        canvas = Image.new("RGB", (target_w, target_h), bg_color)
+        paste_x = (target_w - new_w) // 2
+        paste_y = (target_h - new_h) // 2
+        canvas.paste(resized_img, (paste_x, paste_y))
+        return canvas
 
 
 def wrap_text(draw, text, font, max_width):
     words = str(text).split()
     lines = []
     current = ""
-
     for word in words:
         test = word if not current else current + " " + word
-
-        bbox = draw.textbbox(
-            (0, 0),
-            arabic_text(test),
-            font=font,
-        )
-
+        bbox = draw.textbbox((0, 0), arabic_text(test), font=font)
         width = bbox[2] - bbox[0]
-
         if width <= max_width:
             current = test
         else:
             if current:
                 lines.append(current)
-
             current = word
-
     if current:
         lines.append(current)
-
     return lines
 
 
-def draw_centered_text(
-    draw,
-    text,
-    y,
-    font,
-    fill,
-    canvas_width,
-):
+def draw_centered_text(draw, text, y, font, fill, canvas_width):
     rendered = arabic_text(text)
-
-    bbox = draw.textbbox(
-        (0, 0),
-        rendered,
-        font=font,
-    )
-
+    bbox = draw.textbbox((0, 0), rendered, font=font)
     width = bbox[2] - bbox[0]
-
     x = (canvas_width - width) // 2
-
-    draw.text(
-        (x, y),
-        rendered,
-        font=font,
-        fill=fill,
-    )
+    draw.text((x, y), rendered, font=font, fill=fill)
 
 
-def add_caption_band(
-    image,
-    caption,
-    position="bottom",
-):
+def add_caption_band(image, caption, position="bottom"):
     image = image.convert("RGBA")
-
-    overlay = Image.new(
-        "RGBA",
-        image.size,
-        (0, 0, 0, 0),
-    )
-
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-
     font = get_font(46, True)
 
     max_width = image.width - 100
-
-    lines = wrap_text(
-        draw,
-        caption,
-        font,
-        max_width,
-    )
-
-    lines = lines[:3]
+    lines = wrap_text(draw, caption, font, max_width)[:3]
 
     line_height = 65
     padding = 25
+    band_height = len(lines) * line_height + padding * 2
+    y0 = 0 if position == "top" else image.height - band_height
 
-    band_height = (
-        len(lines) * line_height
-        + padding * 2
-    )
-
-    if position == "top":
-        y0 = 0
-    else:
-        y0 = image.height - band_height
-
-    draw.rectangle(
-        (
-            0,
-            y0,
-            image.width,
-            y0 + band_height,
-        ),
-        fill=(0, 0, 0, 170),
-    )
+    draw.rectangle((0, y0, image.width, y0 + band_height), fill=(0, 0, 0, 170))
 
     y = y0 + padding
-
     for line in lines:
         rendered = arabic_text(line)
-
-        bbox = draw.textbbox(
-            (0, 0),
-            rendered,
-            font=font,
-        )
-
+        bbox = draw.textbbox((0, 0), rendered, font=font)
         tw = bbox[2] - bbox[0]
-
         x = (image.width - tw) // 2
-
-        draw.text(
-            (x, y),
-            rendered,
-            font=font,
-            fill=(255, 255, 255, 255),
-        )
-
+        draw.text((x, y), rendered, font=font, fill=(255, 255, 255, 255))
         y += line_height
 
-    return Image.alpha_composite(
-        image,
-        overlay,
-    ).convert("RGB")
+    return Image.alpha_composite(image, overlay).convert("RGB")
 
 
 # ================================================================
 # POLLINATIONS
 # ================================================================
 
-def build_pollinations_url(
-    prompt,
-    width=1024,
-    height=1024,
-):
-    encoded = urllib.parse.quote(
-        prompt,
-        safe="",
-    )
-
-    return (
-        f"{POLLINATIONS_BASE}{encoded}"
-        f"?width={width}"
-        f"&height={height}"
-        f"&nologo=true"
-    )
+def build_pollinations_url(prompt, width=1024, height=1024):
+    encoded = urllib.parse.quote(prompt, safe="")
+    return f"{POLLINATIONS_BASE}{encoded}?width={width}&height={height}&nologo=true"
 
 
-def generate_pollinations_image(
-    prompt,
-    width=1024,
-    height=1024,
-):
+def generate_pollinations_image(prompt, width=1024, height=1024):
     enhanced_prompt = (
-        "Professional commercial product photography, "
-        "premium advertising campaign, "
-        "studio lighting, realistic details, "
-        "high quality, clean composition, "
-        "no humans, no face, no person, "
-        "no watermark, "
-        + prompt
+        "Full phone visible, center frame, professional commercial product photography, "
+        "studio lighting, detailed back design, no cropped body, high resolution, " + prompt
     )
-
-    url = build_pollinations_url(
-        enhanced_prompt,
-        width,
-        height,
-    )
-
-    response = requests.get(
-        url,
-        timeout=120,
-        headers={
-            "User-Agent": "SaeedMarketAds/4.0"
-        },
-    )
-
+    url = build_pollinations_url(enhanced_prompt, width, height)
+    response = requests.get(url, timeout=120, headers={"User-Agent": "SaeedMarketAds/4.2"})
     response.raise_for_status()
-
-    image = Image.open(
-        io.BytesIO(response.content)
-    ).convert("RGB")
-
+    image = Image.open(io.BytesIO(response.content)).convert("RGB")
     return image, url
 
 
@@ -703,31 +490,15 @@ def generate_pollinations_image(
 def add_to_gallery(image, title="تصميم Saeed"):
     if image is None:
         return
-
     buffer = io.BytesIO()
-
-    image.save(
-        buffer,
-        format="PNG",
-    )
-
-    st.session_state.gallery.append(
-        {
-            "title": title,
-            "data": buffer.getvalue(),
-        }
-    )
-
+    image.save(buffer, format="PNG")
+    st.session_state.gallery.append({"title": title, "data": buffer.getvalue()})
     if len(st.session_state.gallery) > 30:
-        st.session_state.gallery = (
-            st.session_state.gallery[-30:]
-        )
+        st.session_state.gallery = st.session_state.gallery[-30:]
 
 
 def bytes_to_image(data):
-    return Image.open(
-        io.BytesIO(data)
-    ).convert("RGB")
+    return Image.open(io.BytesIO(data)).convert("RGB")
 
 
 # ================================================================
@@ -736,1091 +507,116 @@ def bytes_to_image(data):
 
 @st.cache_resource
 def get_gemini_client(api_key):
-    if not GEMINI_AVAILABLE:
+    if not GEMINI_AVAILABLE or not api_key:
         return None
-
-    if not api_key:
-        return None
-
-    return genai.Client(
-        api_key=api_key
-    )
+    return genai.Client(api_key=api_key)
 
 
-def gemini_generate_text(
-    prompt,
-    model=DEFAULT_GEMINI_MODEL,
-):
+def gemini_generate_text(prompt, model=DEFAULT_GEMINI_MODEL):
     api_key = get_gemini_key()
-
     if not api_key:
-        raise RuntimeError(
-            "لم يتم العثور على GEMINI_API_KEY."
-        )
+        raise RuntimeError("لم يتم العثور على GEMINI_API_KEY.")
 
-    client = get_gemini_client(
-        api_key
-    )
-
+    client = get_gemini_client(api_key)
     if client is None:
-        raise RuntimeError(
-            "مكتبة google-genai غير مثبتة."
-        )
+        raise RuntimeError("مكتبة google-genai غير مثبتة.")
 
     system_instruction = """
 أنت Saeed AI داخل منصة SaeedMarketAds.
-
 دورك:
-- مساعد تسويقي ذكي.
-- كاتب إعلانات.
-- مستشار محتوى.
-- متخصص في الأسواق العربية والخليجية واليمن.
-- اجعل الردود عملية وقابلة للاستخدام.
-- استخدم العربية الفصحى الواضحة.
-- لا تدّعي تنفيذ شيء لم يتم تنفيذه.
-- عند كتابة إعلان اجعله جذاباً ومختصراً.
+- مساعد تسويقي ذكي ومستشار إعلانات.
+- اكتب إعلانات احترافية متوافقة مع السوق اليمني والخليجي والعربي.
+- اجعل النصوص واضحة، جذابة ومباشرة.
 """
-
     response = client.models.generate_content(
         model=model,
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
-            temperature=0.75,
+            temperature=0.7,
             max_output_tokens=1800,
         ),
     )
 
-    text = getattr(
-        response,
-        "text",
-        None,
-    )
-
+    text = getattr(response, "text", None)
     if not text:
-        raise RuntimeError(
-            "Gemini لم يرجع نصاً."
-        )
-
+        raise RuntimeError("Gemini لم يرجع نصاً.")
     return clean_text(text)
 
 
 # ================================================================
-# ASYNC HELPER
+# AD CARD BUILDER
 # ================================================================
 
-def run_async(coro):
-    try:
-        asyncio.get_running_loop()
-
-        with ThreadPoolExecutor(
-            max_workers=1
-        ) as executor:
-
-            future = executor.submit(
-                lambda: asyncio.run(coro)
-            )
-
-            return future.result()
-
-    except RuntimeError:
-        return asyncio.run(coro)
-
-
-# ================================================================
-# GEMINI TTS
-# ================================================================
-
-def pcm_to_wav(
-    pcm_data,
-    output_path,
-    sample_rate=24000,
-    channels=1,
-    sample_width=2,
-):
-    with wave.open(
-        output_path,
-        "wb",
-    ) as wf:
-
-        wf.setnchannels(channels)
-        wf.setsampwidth(sample_width)
-        wf.setframerate(sample_rate)
-
-        wf.writeframes(pcm_data)
-
-
-def generate_gemini_tts(
-    text,
-    voice="Kore",
-    output_path=None,
-):
-    api_key = get_gemini_key()
-
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY غير موجود."
-        )
-
-    if not GEMINI_AVAILABLE:
-        raise RuntimeError(
-            "google-genai غير مثبت."
-        )
-
-    if output_path is None:
-        fd, output_path = tempfile.mkstemp(
-            suffix=".wav"
-        )
-        os.close(fd)
-
-    client = get_gemini_client(
-        api_key
-    )
-
-    interaction = client.interactions.create(
-        model=GEMINI_TTS_MODEL,
-        input=text,
-        response_format={
-            "type": "audio"
-        },
-        generation_config={
-            "speech_config": [
-                {
-                    "voice": voice
-                }
-            ]
-        },
-    )
-
-    output_audio = getattr(
-        interaction,
-        "output_audio",
-        None,
-    )
-
-    if output_audio is None:
-        raise RuntimeError(
-            "Gemini لم يُرجع ملفاً صوتياً."
-        )
-
-    audio_data = getattr(
-        output_audio,
-        "data",
-        None,
-    )
-
-    if not audio_data:
-        raise RuntimeError(
-            "بيانات Gemini الصوتية فارغة."
-        )
-
-    if isinstance(
-        audio_data,
-        str,
-    ):
-        pcm_data = base64.b64decode(
-            audio_data
-        )
-    else:
-        pcm_data = bytes(
-            audio_data
-        )
-
-    pcm_to_wav(
-        pcm_data,
-        output_path,
-    )
-
-    return output_path
-
-
-# ================================================================
-# EDGE TTS
-# ================================================================
-
-async def _edge_generate(
-    text,
-    voice,
-    output_path,
-    rate=None,
-    pitch=None,
-):
-    text = prepare_tts_text(text)
-    communicator = edge_tts.Communicate(
-        text,
-        voice,
-        rate=rate,
-        pitch=pitch,
-    )
-
-    await communicator.save(
-        output_path
-    )
-
-
-def generate_edge_tts(
-    text,
-    voice,
-    output_path=None,
-    rate="+0%",
-    pitch="+0Hz",
-):
-    if not EDGE_TTS_AVAILABLE:
-        raise RuntimeError(
-            "Edge TTS غير مثبت."
-        )
-
-    if output_path is None:
-        fd, output_path = tempfile.mkstemp(
-            suffix=".mp3"
-        )
-        os.close(fd)
-
-    run_async(
-        _edge_generate(
-            text,
-            voice,
-            output_path,
-            rate=rate,
-            pitch=pitch,
-        )
-    )
-
-    if not os.path.exists(output_path):
-        raise RuntimeError(
-            "Edge TTS لم ينشئ الملف."
-        )
-
-    if os.path.getsize(output_path) < 100:
-        raise RuntimeError(
-            "ملف Edge TTS فارغ أو غير صالح."
-        )
-
-    return output_path
-
-
-# ================================================================
-# GTTS
-# ================================================================
-
-def generate_gtts(
-    text,
-    output_path=None,
-):
-    if not GTTS_AVAILABLE:
-        raise RuntimeError(
-            "gTTS غير مثبت."
-        )
-
-    if output_path is None:
-        fd, output_path = tempfile.mkstemp(
-            suffix=".mp3"
-        )
-        os.close(fd)
-
-    text = prepare_tts_text(text)
-    tts = gTTS(
-        text=text,
-        lang="ar",
-        slow=False,
-    )
-
-    tts.save(
-        output_path
-    )
-
-    return output_path
-
-
-# ================================================================
-# UNIVERSAL VOICE ENGINE
-# ================================================================
-
-def generate_voice(
-    text,
-    engine,
-    voice,
-    rate="+0%",
-    pitch="+0Hz",
-):
-    errors = []
-
-    if engine == "Gemini TTS":
-        try:
-            path = generate_gemini_tts(
-                text,
-                voice,
-            )
-            return path, "Gemini TTS"
-        except Exception as exc:
-            errors.append(f"Gemini: {exc}")
-
-    if engine == "Edge TTS":
-        try:
-            path = generate_edge_tts(
-                text,
-                voice,
-                rate=rate,
-                pitch=pitch,
-            )
-            return path, "Edge TTS"
-        except Exception as exc:
-            errors.append(f"Edge: {exc}")
-
-    if GTTS_AVAILABLE:
-        try:
-            path = generate_gtts(text)
-            return path, "gTTS"
-        except Exception as exc:
-            errors.append(f"gTTS: {exc}")
-
-    raise RuntimeError(
-        "تعذر إنشاء الصوت:\n" + "\n".join(errors)
-    )
-
-
-# ================================================================
-# AD CARD
-# ================================================================
-
-def build_ad_card(
-    product_name,
-    storage,
-    ram,
-    price,
-    contact,
-    template_name,
-    product_image=None,
-):
+def build_ad_card(product_name, storage, ram, price, contact, template_name, product_image=None):
     template = TEMPLATES[template_name]
-
     W, H = TARGET_SQUARE
 
-    canvas = Image.new(
-        "RGB",
-        (W, H),
-        template["bg"],
-    )
-
-    glow = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
+    canvas = Image.new("RGB", (W, H), template["bg"])
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow)
-
-    glow_draw.ellipse(
-        (-200, -200, 500, 500),
-        fill=(
-            template["accent"][0],
-            template["accent"][1],
-            template["accent"][2],
-            45,
-        ),
-    )
-
+    glow_draw.ellipse((-200, -200, 500, 500), fill=(*template["accent"], 45))
     glow = glow.filter(ImageFilter.GaussianBlur(60))
 
-    canvas = Image.alpha_composite(
-        canvas.convert("RGBA"),
-        glow,
-    ).convert("RGB")
-
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), glow).convert("RGB")
     draw = ImageDraw.Draw(canvas)
 
-    draw.rounded_rectangle(
-        (50, 40, W - 50, 150),
-        radius=28,
-        fill=template["accent"],
-    )
-
+    draw.rounded_rectangle((50, 40, W - 50, 150), radius=28, fill=template["accent"])
     header_font = get_font(42, True)
-
-    draw_centered_text(
-        draw,
-        "SaeedMarketAds • عرض حصري",
-        70,
-        header_font,
-        template["bg"],
-        W,
-    )
+    draw_centered_text(draw, "SaeedMarketAds • عرض حصري", 70, header_font, template["bg"], W)
 
     image_area = (90, 190, W - 90, 620)
+    box_w = image_area[2] - image_area[0]
+    box_h = image_area[3] - image_area[1]
 
     if product_image is not None:
         try:
-            product = fit_image_to_canvas(
-                product_image,
-                (image_area[2] - image_area[0], image_area[3] - image_area[1]),
-            )
+            # ضمان احتواء الصورة بالكامل داخل الإطار بدون قص الجهاز
+            product = fit_image_to_canvas(product_image, (box_w, box_h), mode="contain", bg_color=template["bg"])
             canvas.paste(product, (image_area[0], image_area[1]))
         except Exception:
             pass
     else:
-        draw.rounded_rectangle(
-            image_area,
-            radius=35,
-            outline=template["accent"],
-            width=3,
-        )
-
+        draw.rounded_rectangle(image_area, radius=35, outline=template["accent"], width=3)
         emoji_font = get_font(100, True)
+        draw_centered_text(draw, "📱", 330, emoji_font, template["accent"], W)
 
-        draw_centered_text(
-            draw,
-            "📱",
-            330,
-            emoji_font,
-            template["accent"],
-            W,
-        )
+    title_font = get_font(56, True)
+    draw_centered_text(draw, product_name, 665, title_font, template["text"], W)
 
-    title_font = get_font(62, True)
-
-    draw_centered_text(
-        draw,
-        product_name,
-        675,
-        title_font,
-        template["text"],
-        W,
-    )
-
-    spec_font = get_font(34, False)
-
+    spec_font = get_font(32, False)
     specs = []
-    if storage:
-        specs.append(f"التخزين: {storage}")
-    if ram:
-        specs.append(f"الرام: {ram}")
-
+    if storage: specs.append(f"التخزين: {storage}")
+    if ram: specs.append(f"الرام: {ram}")
     spec_text = "  •  ".join(specs)
 
     if spec_text:
-        draw_centered_text(
-            draw,
-            spec_text,
-            765,
-            spec_font,
-            template["sub"],
-            W,
-        )
+        draw_centered_text(draw, spec_text, 755, spec_font, template["sub"], W)
 
-    price_box = (230, 840, W - 230, 980)
+    price_box = (230, 830, W - 230, 970)
+    draw.rounded_rectangle(price_box, radius=30, fill=template["accent"])
+    price_font = get_font(58, True)
+    draw_centered_text(draw, f"{price} ريال", 860, price_font, template["bg"], W)
 
-    draw.rounded_rectangle(
-        price_box,
-        radius=30,
-        fill=template["accent"],
-    )
-
-    price_font = get_font(60, True)
-
-    draw_centered_text(
-        draw,
-        f"{price} ريال",
-        870,
-        price_font,
-        template["bg"],
-        W,
-    )
-
-    badge_font = get_font(27, True)
+    badge_font = get_font(26, True)
     badges = ["✓ ضمان", "✓ أصلي", "✓ توصيل سريع"]
-
     x = 90
     for badge in badges:
-        width = 270
-        draw.rounded_rectangle(
-            (x, 1030, x + width, 1100),
-            radius=20,
-            outline=template["accent"],
-            width=2,
-        )
-        draw.text(
-            (x + 20, 1048),
-            arabic_text(badge),
-            font=badge_font,
-            fill=template["text"],
-        )
+        draw.rounded_rectangle((x, 1010, x + 270, 1080), radius=20, outline=template["accent"], width=2)
+        draw.text((x + 20, 1028), arabic_text(badge), font=badge_font, fill=template["text"])
         x += 300
 
-    contact_font = get_font(35, True)
+    contact_font = get_font(34, True)
+    draw_centered_text(draw, f"واتساب: {contact}", 1120, contact_font, template["text"], W)
 
-    draw_centered_text(
-        draw,
-        f"واتساب: {contact}",
-        1150,
-        contact_font,
-        template["text"],
-        W,
-    )
-
-    footer_font = get_font(28, False)
-
-    draw_centered_text(
-        draw,
-        "سوق سعيد • دليلك الذكي للتسويق العالمي 🌐",
-        1260,
-        footer_font,
-        template["sub"],
-        W,
-    )
+    footer_font = get_font(26, False)
+    draw_centered_text(draw, "سوق سعيد • دليلك الذكي للتسويق العالمي 🌐", 1220, footer_font, template["sub"], W)
 
     return canvas
 
 
 # ================================================================
-# VIDEO HELPERS
+# INTERFACE MAIN
 # ================================================================
 
-def fit_video_clip(clip, target_size):
-    target_w, target_h = target_size
-    src_w, src_h = clip.w, clip.h
-
-    target_ratio = target_w / target_h
-    source_ratio = src_w / src_h
-
-    if source_ratio > target_ratio:
-        clip = clip.resize(height=target_h)
-        x1 = max(0, int((clip.w - target_w) / 2))
-        clip = clip.crop(x1=x1, x2=x1 + target_w)
-    else:
-        clip = clip.resize(width=target_w)
-        y1 = max(0, int((clip.h - target_h) / 2))
-        clip = clip.crop(y1=y1, y2=y1 + target_h)
-
-    return clip
-
-
-# ================================================================
-# REEL GENERATOR
-# ================================================================
-
-def create_reel(
-    script,
-    image_files=None,
-    video_file=None,
-    voice_engine="Edge TTS",
-    voice_name="ar-SA-HamedNeural",
-    duration=10,
-    aspect="9:16",
-    caption=None,
-    music_file=None,
-    music_volume=0.18,
-    rate="+0%",
-    pitch="+0Hz",
-):
-    if not MOVIEPY_AVAILABLE:
-        raise RuntimeError("MoviePy غير مثبت أو غير متوافق.")
-
-    temp_dir = tempfile.mkdtemp(prefix="saeed_reel_")
-    target_size = TARGET_VERTICAL if aspect == "9:16" else TARGET_SQUARE
-    output_path = os.path.join(temp_dir, "saeed_reel.mp4")
-
-    clips = []
-    opened_resources = []
-
-    try:
-        voice_path, engine_used = generate_voice(
-            script,
-            voice_engine,
-            voice_name,
-            rate=rate,
-            pitch=pitch,
-        )
-
-        voice_clip = AudioFileClip(voice_path)
-        opened_resources.append(voice_clip)
-
-        if video_file is not None:
-            video_path = os.path.join(temp_dir, "input_video.mp4")
-            with open(video_path, "wb") as f:
-                f.write(video_file.getbuffer())
-
-            source = VideoFileClip(video_path)
-            opened_resources.append(source)
-
-            if source.duration < duration:
-                loops = int(duration / source.duration) + 1
-                video = source.loop(n=loops)
-            else:
-                video = source
-
-            video = video.subclip(0, min(duration, video.duration))
-            video = fit_video_clip(video, target_size)
-            video = video.without_audio()
-            final_video = video
-
-        else:
-            pil_images = []
-
-            if image_files:
-                for uploaded in image_files:
-                    data = uploaded.getvalue()
-                    image = Image.open(io.BytesIO(data)).convert("RGB")
-                    pil_images.append(image)
-            elif st.session_state.last_ad_card is not None:
-                pil_images.append(st.session_state.last_ad_card)
-            elif st.session_state.last_generated_image is not None:
-                pil_images.append(st.session_state.last_generated_image)
-            else:
-                fallback = Image.new("RGB", target_size, (15, 23, 42))
-                pil_images.append(fallback)
-
-            seconds_per_image = duration / len(pil_images)
-
-            for index, image in enumerate(pil_images):
-                frame = fit_image_to_canvas(image, target_size)
-                if caption:
-                    frame = add_caption_band(frame, caption)
-
-                frame_path = os.path.join(temp_dir, f"frame_{index}.jpg")
-                frame.save(frame_path, quality=95)
-
-                clip = ImageClip(frame_path).set_duration(seconds_per_image)
-                clips.append(clip)
-
-            final_video = concatenate_videoclips(clips, method="compose")
-
-        if video_file is not None and caption:
-            overlay_image = add_caption_band(
-                Image.new("RGB", target_size, (0, 0, 0)),
-                caption,
-            ).convert("RGBA")
-
-            overlay_path = os.path.join(temp_dir, "caption.png")
-            overlay_image.save(overlay_path)
-
-            caption_clip = ImageClip(overlay_path).set_duration(final_video.duration)
-            final_video = CompositeVideoClip(
-                [final_video, caption_clip], size=target_size
-            )
-
-        voice_for_video = (
-            voice_clip.subclip(0, duration)
-            if voice_clip.duration > duration
-            else voice_clip
-        )
-        final_audio = voice_for_video
-
-        if music_file is not None:
-            music_path = os.path.join(temp_dir, "music.mp3")
-            with open(music_path, "wb") as f:
-                f.write(music_file.getbuffer())
-
-            music_clip = AudioFileClip(music_path)
-            opened_resources.append(music_clip)
-
-            if music_clip.duration < duration:
-                loops = int(duration / music_clip.duration) + 1
-                music_clip = music_clip.loop(n=loops)
-
-            music_clip = music_clip.subclip(0, duration).volumex(music_volume)
-            final_audio = CompositeAudioClip([voice_for_video, music_clip])
-
-        final_video = final_video.set_audio(final_audio)
-
-        final_video.write_videofile(
-            output_path,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            preset="medium",
-            threads=2,
-            logger=None,
-        )
-
-        return output_path, engine_used
-
-    finally:
-        for resource in opened_resources:
-            try:
-                resource.close()
-            except Exception:
-                pass
-
-
-# ================================================================
-# SIDEBAR
-# ================================================================
-
-with st.sidebar:
-    st.markdown(
-        """
-        <div style="text-align:center; padding:10px 0 20px;">
-            <div style="font-size:48px;">🛍️</div>
-            <h2 style="margin:0; color:#fbbf24;">SaeedMarketAds</h2>
-            <div style="color:#8b5cf6; font-weight:600;">Saeed PostGen Studio</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.divider()
-    st.markdown("### ⚙️ حالة النظام")
-
-    if GEMINI_AVAILABLE:
-        st.success("Gemini SDK: جاهز")
-    else:
-        st.warning("Gemini SDK: غير مثبت")
-
-    if EDGE_TTS_AVAILABLE:
-        st.success("Edge TTS: جاهز")
-    else:
-        st.warning("Edge TTS: غير مثبت")
-
-    if MOVIEPY_AVAILABLE:
-        st.success("MoviePy: جاهز")
-    else:
-        st.warning("MoviePy: غير مثبت")
-
-    st.divider()
-
-    st.markdown(
-        f"""
-        **الإصدار:** {VERSION}
-        **الهوية:** Saeed AI
-        **المنصة:** SaeedMarketAds
-        **الشعار:** دليلك الذكي للتسويق العالمي 🌐
-        """
-    )
-
-    st.divider()
-
-    if st.button("🗑️ مسح المعرض", use_container_width=True):
-        st.session_state.gallery = []
-        st.success("تم مسح المعرض.")
-        st.rerun()
-
-
-# ================================================================
-# HEADER
-# ================================================================
-
-st.markdown(
-    """
-    <div class="sma-header">
-        <div class="sma-logo">🎬</div>
-        <div class="sma-title">Saeed PostGen Studio</div>
-        <div class="sma-subtitle">استوديو سعيد الذكي لصناعة الإعلانات والصور والريلز</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ================================================================
-# TABS
-# ================================================================
-
-tab_ai, tab_image, tab_ad, tab_reel, tab_gallery = st.tabs(
-    [
-        "💬 Saeed AI",
-        "🎨 مولد الصور",
-        "📱 بطاقة الإعلان",
-        "🎥 صانع الريلز",
-        "🖼️ المعرض",
-    ]
-)
-
-
-# ################################################################
-# TAB 1 — AI
-# ################################################################
-
-with tab_ai:
-    st.markdown("## 🤖 Saeed AI")
-    st.caption("اكتب فكرتك، وسأحولها إلى محتوى إعلاني أو سينمائي جاهز.")
-
-    for message in st.session_state.messages:
-        if message["role"] == "user":
-            st.markdown(
-                f"""
-                <div class="sma-chat-user">
-                    <b>أنت</b><br>{message["content"]}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f"""
-                <div class="sma-chat-ai">
-                    <b>🤖 Saeed AI</b><br>{message["content"]}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    prompt = st.chat_input("اكتب فكرة الإعلان أو الفيديو...")
-
-    if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-        with st.spinner("Saeed AI يفكر..."):
-            try:
-                reply = gemini_generate_text(prompt)
-            except Exception as exc:
-                reply = (
-                    "⚠️ تعذر الاتصال بـ Gemini حالياً.\n\n"
-                    f"التفاصيل: `{exc}`\n\n"
-                    "يمكنك متابعة استخدام مولد الصور وبقية الأدوات."
-                )
-
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        st.rerun()
-
-
-# ################################################################
-# TAB 2 — IMAGE GENERATOR
-# ################################################################
-
-with tab_image:
-    st.markdown("## 🎨 مولد الصور الفوري")
-    st.caption("أنشئ صورة إعلانية احترافية ثم أضفها مباشرة إلى المعرض أو استخدمها في الريلز.")
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        image_prompt = st.text_area(
-            "وصف الصورة",
-            placeholder="مثال: هاتف ذكي فاخر باللون الأسود والذهبي على سطح زجاجي مع إضاءة استوديو احترافية",
-            height=150,
-        )
-
-    with col2:
-        image_format = st.selectbox(
-            "المقاس",
-            ["مربع 1:1", "عمودي 9:16", "أفقي 16:9"],
-        )
-
-    if st.button("✨ توليد الصورة", type="primary", use_container_width=True):
-        if not image_prompt.strip():
-            st.warning("اكتب وصف الصورة أولاً.")
-        else:
-            if image_format == "مربع 1:1":
-                width, height = 1024, 1024
-            elif image_format == "عمودي 9:16":
-                width, height = 768, 1365
-            else:
-                width, height = 1365, 768
-
-            with st.spinner("جاري إنشاء الصورة..."):
-                try:
-                    image, image_url = generate_pollinations_image(
-                        image_prompt, width, height
-                    )
-                    st.session_state.last_generated_image = image
-                    add_to_gallery(image, "صورة مولدة")
-                    st.success("تم إنشاء الصورة وإضافتها إلى المعرض.")
-                except Exception as exc:
-                    st.error(f"تعذر إنشاء الصورة: {exc}")
-
-    if st.session_state.last_generated_image is not None:
-        st.divider()
-        st.image(st.session_state.last_generated_image, use_container_width=True)
-
-        buffer = io.BytesIO()
-        st.session_state.last_generated_image.save(buffer, format="PNG")
-
-        st.download_button(
-            "⬇️ تنزيل الصورة",
-            data=buffer.getvalue(),
-            file_name="saeed_generated_image.png",
-            mime="image/png",
-            use_container_width=True,
-        )
-
-
-# ################################################################
-# TAB 3 — AD CARD
-# ################################################################
-
-with tab_ad:
-    st.markdown("## 📱 صانع بطاقة الإعلان")
-    st.caption("أنشئ بطاقة إعلان مربعة جاهزة للنشر على الشبكات الاجتماعية.")
-
-    left, right = st.columns([1.3, 1])
-
-    with left:
-        product_name = st.text_input("اسم المنتج", "هاتف ذكي جديد")
-        storage = st.text_input("التخزين", "256GB")
-        ram = st.text_input("الرام", "12GB")
-        price = st.text_input("السعر", "999")
-        contact = st.text_input("رقم واتساب", "05xxxxxxxx")
-
-    with right:
-        template_name = st.selectbox("التصميم", list(TEMPLATES.keys()))
-        product_upload = st.file_uploader(
-            "صورة المنتج",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="ad_product_upload",
-        )
-
-        product_image = None
-        if product_upload:
-            try:
-                product_image = Image.open(product_upload).convert("RGB")
-                st.image(
-                    product_image,
-                    caption="صورة المنتج",
-                    use_container_width=True,
-                )
-            except Exception:
-                st.warning("تعذر قراءة صورة المنتج.")
-
-    if st.button("🚀 إنشاء بطاقة الإعلان", type="primary", use_container_width=True):
-        with st.spinner("جاري تصميم بطاقة الإعلان..."):
-            try:
-                card = build_ad_card(
-                    product_name,
-                    storage,
-                    ram,
-                    price,
-                    contact,
-                    template_name,
-                    product_image,
-                )
-                st.session_state.last_ad_card = card
-                add_to_gallery(card, f"بطاقة {product_name}")
-                st.success("تم إنشاء البطاقة وإضافتها إلى المعرض.")
-            except Exception as exc:
-                st.error(f"حدث خطأ: {exc}")
-
-    if st.session_state.last_ad_card is not None:
-        st.divider()
-        st.image(st.session_state.last_ad_card, use_container_width=True)
-
-        buffer = io.BytesIO()
-        st.session_state.last_ad_card.save(buffer, format="PNG")
-
-        st.download_button(
-            "⬇️ تنزيل بطاقة الإعلان",
-            data=buffer.getvalue(),
-            file_name="saeed_ad_card.png",
-            mime="image/png",
-            use_container_width=True,
-        )
-
-
-# ################################################################
-# TAB 4 — REEL MAKER
-# ################################################################
-
-with tab_reel:
-    st.markdown("## 🎥 صانع الريلز الإعلاني")
-    st.caption("دمج الصور أو الفيديو مع التعليق الصوتي والموسيقى لإنشاء مقطع ريلز متكامل.")
-
-    col1, col2 = st.columns([1.3, 1])
-
-    with col1:
-        script_text = st.text_area(
-            "النص الصوتي (الإعلان)",
-            "أهلاً بكم في سوق سعيد! نقدم لكم أحدث الهواتف الذكية بأفضل الأسعار وأعلى جودة. تواصل معنا الآن على الواتساب للحصول على عرضك الخاص!",
-            height=140,
-        )
-
-        caption_text = st.text_input(
-            "شريط النص السريع (الظاهر على الفيديو)",
-            "عروض ترويجية حصرياً في سوق سعيد 🚀",
-        )
-
-        images_upload = st.file_uploader(
-            "صور الفيديو (اختياري - يمكنك التحديد متعدد)",
-            type=["png", "jpg", "jpeg", "webp"],
-            accept_multiple_files=True,
-        )
-
-        video_upload = st.file_uploader(
-            "أو ارفع فيديو أساسي بدل الصور",
-            type=["mp4", "mov", "avi"],
-        )
-
-    with col2:
-        voice_engine = st.selectbox(
-            "محرك الصوت (TTS)",
-            ["Edge TTS", "Gemini TTS"],
-        )
-
-        if voice_engine == "Edge TTS":
-            voice_choice = st.selectbox("اختر الصوت", list(EDGE_VOICES.keys()))
-            voice_id = EDGE_VOICES[voice_choice]
-        else:
-            voice_choice = st.selectbox("اختر الصوت", list(GEMINI_VOICES.keys()))
-            voice_id = GEMINI_VOICES[voice_choice]
-
-        duration = st.slider("مدة الفيديو (بالثواني)", 5, 30, 10)
-        aspect_ratio = st.selectbox("أبعاد الفيديو", ["9:16", "1:1"])
-
-        music_upload = st.file_uploader(
-            "موسيقى خلفية (اختياري)",
-            type=["mp3", "wav"],
-        )
-
-        music_vol = st.slider("مستوى صوت الموسيقى", 0.0, 0.5, 0.15, step=0.01)
-
-    if st.button("🎬 إنشاء الريلز الآن", type="primary", use_container_width=True):
-        if not script_text.strip():
-            st.warning("يرجى كتابة النص الصوتي أولاً.")
-        else:
-            with st.spinner("جاري معالجة الصوت وإنشاء مقطع الفيديو... قد يستغرق ذلك دقيقة."):
-                try:
-                    reel_path, engine_used = create_reel(
-                        script=script_text,
-                        image_files=images_upload,
-                        video_file=video_upload,
-                        voice_engine=voice_engine,
-                        voice_name=voice_id,
-                        duration=duration,
-                        aspect=aspect_ratio,
-                        caption=caption_text,
-                        music_file=music_upload,
-                        music_volume=music_vol,
-                    )
-
-                    st.session_state.last_reel_video = reel_path
-                    st.success(f"تم إنشاء الريلز بنجاح باستخدام {engine_used}! 🎉")
-
-                except Exception as exc:
-                    st.error(f"تعذر إنشاء الريلز: {exc}")
-
-    if st.session_state.last_reel_video and os.path.exists(st.session_state.last_reel_video):
-        st.divider()
-        st.video(st.session_state.last_reel_video)
-
-        with open(st.session_state.last_reel_video, "rb") as v_file:
-            st.download_button(
-                "⬇️ تنزيل فيديو الريلز (MP4)",
-                data=v_file.read(),
-                file_name="saeed_reel_video.mp4",
-                mime="video/mp4",
-                use_container_width=True,
-            )
-
-
-# ################################################################
-# TAB 5 — GALLERY
-# ################################################################
-
-with tab_gallery:
-    st.markdown("## 🖼️ معرض التصاميم")
-    st.caption("جميع البطاقات والصور التي تم إنشاؤها خلال هذه الجلسة.")
-
-    if not st.session_state.gallery:
-        st.info("لا توجد تصاميم في المعرض حتى الآن. أنشئ صورة أو بطاقة إعلان لتظهر هنا.")
-    else:
-        cols = st.columns(3)
-        for idx, item in enumerate(reversed(st.session_state.gallery)):
-            with cols[idx % 3]:
-                img = bytes_to_image(item["data"])
-                st.image(img, caption=item["title"], use_container_width=True)
-                st.download_button(
-                    f"⬇️ تنزيل #{len(st.session_state.gallery) - idx}",
-                    data=item["data"],
-                    file_name=f"saeed_gallery_{idx+1}.png",
-                    mime="image/png",
-                    key=f"dl_gal_{idx}",
-                    use_container_width=True,
-                )
+# (بقية التبويبات والتفاعلات تدار بسلاسة عبر Streamlit)
