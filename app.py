@@ -1,5 +1,5 @@
 # ================================================================
-# Saeed PostGen Studio - Production Candidate (v4.5.7)
+# Saeed PostGen Studio - Final Production Release (v4.6.0)
 # SaeedMarketAds | سوق سعيد
 # ================================================================
 
@@ -117,10 +117,11 @@ st.set_page_config(
 
 APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.5.7 Production Candidate"
+VERSION = "4.6.0 Final Production"
 
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
-GEMINI_TTS_MODEL = "gemini-3.1-flash-preview-tts"
+# 🟢 نموذج Gemini 3.7 Flash الرسمي مع الإعدادات الافتراضية
+DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
+GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
 
@@ -132,7 +133,7 @@ GEMINI_TTS_CHANNELS = 1
 GEMINI_TTS_SAMPLE_WIDTH = 2
 
 GEMINI_TTS_PROMPT = """
-اقرأ النص التالي بالعربية الفصحى بصوت إعلاني احترافي.
+اقرأ النص التالي بالعربية الفصحى مع دعم المصطلحات الإنجليزية بشكل صحيح وبصوت إعلاني احترافي.
 النبرة: واثقة، دافئة، جذابة ومحفزة.
 
 تعليمات الأداء الصوتي:
@@ -189,7 +190,7 @@ for key, default in [
     ("last_reel_video", None),
     ("temp_files", []),
     ("scene_list", [str(uuid.uuid4()), str(uuid.uuid4())]),
-    ("messages", [{"role": "assistant", "content": f"أهلاً بك في **{APP_NAME} v{VERSION}** 🎬\nنسخة التجربة المتقدمة (Production Candidate) جاهزة لاختباراتك الميدانية!"}]),
+    ("messages", [{"role": "assistant", "content": f"أهلاً بك في **{APP_NAME} v{VERSION}** 🎬\nالنسخة الجاهزة تماماً للتصدير والإنتاج!"}]),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -264,9 +265,14 @@ def arabic_text(text):
         except Exception: pass
     return str(text)
 
+# 🟡 معالج إعداد نصوص الصوت الجديد (يدعم الإنجليزية والأرقام بأمان)
 def prepare_tts_text(text):
     if not text: return ""
-    text = re.sub(r'[^ء-ي\s0-9،.؟!;:()\-"]', ' ', str(text))
+    text = str(text)
+    text = re.sub(r'```(?:text|markdown|python)?', '', text, flags=re.IGNORECASE)
+    text = text.replace("```", " ")
+    text = re.sub(r'https?://\S+', ' ', text)
+    text = re.sub(r'\S+@\S+', ' ', text)
     return re.sub(r'\s+', ' ', text).strip()
 
 def get_font(size=40, bold=True):
@@ -326,18 +332,14 @@ def image_to_png_bytes(image):
 # ASYNC & MOVIEPY COMPATIBILITY HELPERS
 # ================================================================
 
-def run_async(coro):
+def run_async(coro_factory):
     try:
-        loop = asyncio.get_event_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
-        loop = None
+        return asyncio.run(coro_factory())
 
-    if loop and loop.is_running():
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(lambda: asyncio.run(coro))
-            return future.result()
-    else:
-        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(coro_factory())).result()
 
 def _clip_set_duration(clip, duration):
     return clip.set_duration(duration) if hasattr(clip, "set_duration") else clip.with_duration(duration)
@@ -395,16 +397,18 @@ def gemini_generate_text(prompt, model=DEFAULT_GEMINI_MODEL):
     client = get_gemini_client()
     if not client: raise RuntimeError("مفتاح GEMINI_API_KEY غير متاح.")
     sys_instruction = f"أنت Saeed AI، المساعد الذكي الخاص بمنصة {BRAND_NAME}."
+    
+    # 🔴 الاعتماد على الإعدادات الافتراضية للنموذج وفق توصيات Google Gemini 3.7
     res = client.models.generate_content(
         model=model, contents=prompt,
-        config=types.GenerateContentConfig(system_instruction=sys_instruction, temperature=0.7)
+        config=types.GenerateContentConfig(system_instruction=sys_instruction)
     )
     return clean_text(getattr(res, "text", ""))
 
 def generate_pollinations_image(prompt, width=1024, height=1024):
     enhanced = f"Commercial product photography, studio setup, 8k resolution, ultra detailed, {prompt}"
     url = f"{POLLINATIONS_BASE}{urllib.parse.quote(enhanced)}?width={width}&height={height}&nologo=true"
-    res = requests.get(url, timeout=60, headers={"User-Agent": "SaeedMarketAds/4.5"})
+    res = requests.get(url, timeout=60, headers={"User-Agent": "SaeedMarketAds/4.6"})
     res.raise_for_status()
     return Image.open(io.BytesIO(res.content)).convert("RGB"), url
 
@@ -470,9 +474,13 @@ def generate_voice(text, engine, voice, rate="+0%", pitch="+0Hz", strict_mode=Fa
                 register_temp_file(out_path)
                 return out_path, "Gemini TTS", "✅ تم توليد الصوت بنجاح عبر محرك Gemini TTS الأصلي."
             except Exception as e:
+                try:
+                    if os.path.exists(out_path): os.remove(out_path)
+                except Exception: pass
+
                 if strict_mode:
                     raise RuntimeError(f"فشل Gemini TTS في وضع Strict الصارم: {e}")
-                note = f"⚠️ Gemini TTS → فشل ({e}) \n🔄 Fallback → التحويل التلقائي إلى Edge TTS."
+                note = f"⚠️ Gemini TTS → فشل ({e})\n🔄 Fallback → التحويل التلقائي إلى Edge TTS."
         else:
             if strict_mode: raise RuntimeError("Gemini TTS غير متاح.")
             note = "⚠️ Gemini TTS غير متاح \n🔄 Fallback → التحويل التلقائي إلى Edge TTS."
@@ -482,20 +490,29 @@ def generate_voice(text, engine, voice, rate="+0%", pitch="+0Hz", strict_mode=Fa
         os.close(fd)
         try:
             edge_voice = voice if engine == "Edge TTS" else list(EDGE_VOICES.values())[0]
-            run_async(_edge_tts_process(text, edge_voice, out_path, rate, pitch))
+            run_async(lambda: _edge_tts_process(text, edge_voice, out_path, rate, pitch))
             register_temp_file(out_path)
             used_msg = "Edge TTS" + (" (الاحتياطي)" if engine == "Gemini TTS" else "")
             return out_path, used_msg, note
         except Exception as e:
+            try:
+                if os.path.exists(out_path): os.remove(out_path)
+            except Exception: pass
             note += f"\n⚠️ فشل Edge TTS أيضاً ({e})."
 
     if GTTS_AVAILABLE:
         fd, out_path = tempfile.mkstemp(suffix=".mp3")
         os.close(fd)
-        tts = gTTS(text=prepare_tts_text(text), lang="ar", slow=False)
-        tts.save(out_path)
-        register_temp_file(out_path)
-        return out_path, "gTTS (الاحتياطي النهائي)", note
+        try:
+            tts = gTTS(text=prepare_tts_text(text), lang="ar", slow=False)
+            tts.save(out_path)
+            register_temp_file(out_path)
+            return out_path, "gTTS (الاحتياطي النهائي)", note
+        except Exception as e:
+            try:
+                if os.path.exists(out_path): os.remove(out_path)
+            except Exception: pass
+            raise e
 
     raise RuntimeError("تعذر معالجة الصوت بجميع المحركات المتاحة.")
 
@@ -570,9 +587,6 @@ def build_ad_card(product_name, storage, ram, price, contact, template_name, pro
     return canvas
 
 def build_cta_end_screen(contact_number=""):
-    """
-    بناء شاشة الـ CTA ثابتة بدون استقبال معامل progress لتجنب إعادتها في كل frame.
-    """
     W, H = TARGET_VERTICAL
     canvas = Image.new("RGB", (W, H), (11, 15, 26))
     draw = ImageDraw.Draw(canvas)
@@ -607,7 +621,7 @@ def add_text_overlay(image, title="", brand=BRAND_NAME, contact=""):
 
 
 # ================================================================
-# ULTRA REEL ENGINE (OPTIMIZED CTA & ACCURATE TIMING)
+# ULTRA REEL ENGINE (VERIFIED MP4 & TIMING)
 # ================================================================
 
 def make_advanced_ken_burns_clip(pil_img, duration, mode="zoom_in", fps=24):
@@ -645,7 +659,7 @@ def make_advanced_ken_burns_clip(pil_img, duration, mode="zoom_in", fps=24):
             top_y = max_y_offset // 2
             return np.array(base_img.crop((offset_x, top_y, offset_x + tw, top_y + th)))
 
-        else: # pan_right
+        else:
             offset_x = int(max_x_offset * (1.0 - progress))
             top_y = max_y_offset // 2
             return np.array(base_img.crop((offset_x, top_y, offset_x + tw, top_y + th)))
@@ -653,9 +667,6 @@ def make_advanced_ken_burns_clip(pil_img, duration, mode="zoom_in", fps=24):
     return create_animated_clip(make_frame, duration=duration, fps=fps)
 
 def make_animated_cta_clip(contact_number="", duration=2.5, fps=24):
-    """
-    تحسين الأداء: بناء صورة Pillow مرة واحدة خارج make_frame لرفع سرعة المعالجة.
-    """
     tw, th = TARGET_VERTICAL
     oversized_dim = (int(tw * 1.12), int(th * 1.12))
 
@@ -696,8 +707,6 @@ def build_reel_video(images, script_text=None, tts_engine=None, voice=None,
             total_audio_duration = audio_clip.duration
 
         n = len(images)
-        
-        # حساب تعويض التداخل الزمني للـ Crossfade لضمان مطابقة زمن الفيديو مع زمن الصوت
         effective_crossfade = crossfade_duration if (n > 1 and crossfade_duration > 0) else 0.0
         total_overlap_loss = (n - 1) * effective_crossfade if n > 1 else 0.0
 
@@ -739,6 +748,12 @@ def build_reel_video(images, script_text=None, tts_engine=None, voice=None,
             logging.error(f"خطأ أثناء تصدير الفيديو بـ FFmpeg:\n{traceback.format_exc()}")
             raise ffmpeg_err
 
+        # 🟡 فحص وجود وصحة حجم الملف المصدر بعد الانتهاء
+        if not os.path.isfile(out_path):
+            raise RuntimeError("تم تنفيذ عملية التصدير ولكن لم يتم العثور على ملف الـ MP4 على القرص.")
+        if os.path.getsize(out_path) == 0:
+            raise RuntimeError("تم إنشاء ملف الـ MP4 ولكن الحجم الإجمالي للملف يساوي 0 بايت.")
+
         return out_path, engine_used, tts_note
 
     finally:
@@ -756,7 +771,7 @@ with st.sidebar:
     st.markdown("<h2 style='text-align:center; color:#fbbf24;'>Saeed Studio</h2>", unsafe_allow_html=True)
     st.caption(f"الإصدار: {VERSION}")
     st.divider()
-    if st.button("🗑️ تنظيف الملفات المؤقتة", use_container_width=True):
+    if st.button("🗑️ تنظيف الملفات المؤقتة", width="stretch"):
         removed = cleanup_temp_files()
         st.toast(f"تم حذف {removed} ملف مؤقت.", icon="🧹")
         st.rerun()
@@ -803,7 +818,7 @@ with tab_image:
                     
                     save_image_to_disk(final_img, IMAGES_DIR, prefix="img")
                     st.success("تم الحفظ في المعرض بفرادة كاملة!")
-                    st.image(final_img, use_container_width=True)
+                    st.image(final_img, width="stretch")
                 except Exception as e: st.error(f"⚠️ تعذر توليد الصورة: {e}")
 
 # --- TAB 3: Ad Card ---
@@ -827,7 +842,7 @@ with tab_ad:
             st.session_state.last_ad_card = card
             save_image_to_disk(card, CARDS_DIR, prefix="card")
             st.success("تم الحفظ بنجاح!")
-            st.image(card, use_container_width=True)
+            st.image(card, width="stretch")
         except Exception as e: st.error(f"⚠️ تعذر إنشاء البطاقة: {e}")
 
 # --- TAB 4: Ultra Reel Maker ---
@@ -863,7 +878,7 @@ with tab_reel:
                 choice = st.selectbox(f"المشهد {idx+1}:", keys_list, index=min(idx, len(keys_list)-1), key=f"dynamic_sc_{sc_id}")
                 selected_images.append(available_dict[choice])
             with sc_c2:
-                st.image(available_dict[choice], height=100)
+                st.image(available_dict[choice], width=180)
             with sc_del:
                 if len(st.session_state.scene_list) > 1 and st.button("🗑️", key=f"del_sc_{sc_id}"):
                     st.session_state.scene_list.remove(sc_id)
@@ -888,7 +903,7 @@ with tab_reel:
         with col_m2:
             crossfade_dur = st.slider("مدة التداخل بين المشاهد (ثواني)", 0.0, 1.5, 0.4, 0.1, help="تحديد 0.0 يعني الانتقال المباشر بدون Crossfade")
 
-        if st.button("🎬 إنتاج Ultra Reel الان", type="primary", use_container_width=True):
+        if st.button("🎬 إنتاج Ultra Reel الان", type="primary", width="stretch"):
             with st.spinner("جاري دمج الحركات السينمائية، شاشة CTA، والتنقلات والصوت..."):
                 try:
                     out_path, engine_used, tts_note = build_reel_video(
@@ -904,7 +919,7 @@ with tab_reel:
                             st.success(tts_note)
                     st.video(out_path)
                     with open(out_path, "rb") as f:
-                        st.download_button("⬇️ تحميل Ultra Reel MP4", data=f.read(), file_name=os.path.basename(out_path), mime="video/mp4", use_container_width=True)
+                        st.download_button("⬇️ تحميل Ultra Reel MP4", data=f.read(), file_name=os.path.basename(out_path), mime="video/mp4", width="stretch")
                 except Exception as e: st.error(f"⚠️ تعذر إنتاج الريل: {e}")
 
 # --- TAB 5: Disk Gallery ---
@@ -920,12 +935,12 @@ with tab_gallery:
                 try:
                     if item["type"] == "image":
                         img = Image.open(item["path"])
-                        st.image(img, caption=item["title"], use_container_width=True)
+                        st.image(img, caption=item["title"], width="stretch")
                         col_dl, col_del = st.columns(2)
                         with col_dl:
-                            st.download_button("⬇️ تحميل", data=image_to_png_bytes(img), file_name=os.path.basename(item["path"]), mime="image/png", key=f"dl_disk_{idx}", use_container_width=True)
+                            st.download_button("⬇️ تحميل", data=image_to_png_bytes(img), file_name=os.path.basename(item["path"]), mime="image/png", key=f"dl_disk_{idx}", width="stretch")
                         with col_del:
-                            if st.button("🗑️ حذف", key=f"del_disk_{idx}", use_container_width=True):
+                            if st.button("🗑️ حذف", key=f"del_disk_{idx}", width="stretch"):
                                 os.remove(item["path"])
                                 st.rerun()
                     elif item["type"] == "video":
@@ -934,11 +949,10 @@ with tab_gallery:
                         col_dl, col_del = st.columns(2)
                         with col_dl:
                             with open(item["path"], "rb") as vf:
-                                st.download_button("⬇️ تحميل MP4", data=vf.read(), file_name=os.path.basename(item["path"]), mime="video/mp4", key=f"dl_vid_{idx}", use_container_width=True)
+                                st.download_button("⬇️ تحميل MP4", data=vf.read(), file_name=os.path.basename(item["path"]), mime="video/mp4", key=f"dl_vid_{idx}", width="stretch")
                         with col_del:
-                            if st.button("🗑️ حذف", key=f"del_vid_{idx}", use_container_width=True):
+                            if st.button("🗑️ حذف", key=f"del_disk_{idx}", width="stretch"):
                                 os.remove(item["path"])
                                 st.rerun()
                 except Exception as e:
                     st.error(f"خطأ في تحميل العنصر {item['title']}: {e}")
-
