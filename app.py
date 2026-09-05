@@ -120,7 +120,7 @@ BRAND_NAME = "SaeedMarketAds"
 VERSION = "4.5.7 Production Candidate"
 
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
-GEMINI_TTS_MODEL = "gemini-3.6-flash-preview-tts"
+GEMINI_TTS_MODEL = "gemini-3.1-flash-preview-tts"
 
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
 
