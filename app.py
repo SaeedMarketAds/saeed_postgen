@@ -107,46 +107,36 @@ FFMPEG_AVAILABLE = bool(shutil.which("ffmpeg"))
 # ================================================================
 # CONFIG & CONSTANTS
 # ================================================================
+import google.generativeai as genai
 
-st.set_page_config(
-    page_title="Saeed PostGen Studio",
-    page_icon="🎬",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# إعداد مفتاح الـ API
+genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
-APP_NAME = "Saeed PostGen Studio"
-BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.6.0 Final Production"
+# قائمة الموديلات الصحيحة مرتبة حسب الأولوية
+PRIMARY_MODEL = "gemini-1.5-flash"  # الموديل السريع والأساسي
+FALLBACK_MODEL = "gemini-1.5-pro"    # الموديل الاحتياطي للأداء العالي
 
-# 🟢 نموذج Gemini 3.7 Flash الرسمي مع الإعدادات الافتراضية
-DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
-GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+def generate_saeed_ai_response(prompt_text):
+    # المحاولة الأولى باستخدام الموديل الأساسي
+    try:
+        model = genai.GenerativeModel(PRIMARY_MODEL)
+        response = model.generate_content(prompt_text)
+        return response.text
 
-POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
+    except Exception as e:
+        error_msg = str(e)
+        # التحقق من أخطاء الضغط على السيرفر (503 / Unavailable / Quota Exceeded)
+        if any(code in error_msg for code in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
+            try:
+                # التبديل للموديل الاحتياطي
+                fallback_model = genai.GenerativeModel(FALLBACK_MODEL)
+                response = fallback_model.generate_content(prompt_text)
+                return response.text
+            except Exception as fallback_error:
+                return "عذرًا، السيرفرات مكتظة حاليًا. يرجى المحاولة بعد لحظات."
+        else:
+            return f"حدث خطأ أثناء معالجة الطلب: {error_msg}"
 
-TARGET_VERTICAL = (1080, 1920)
-TARGET_SQUARE = (1080, 1080)
-
-GEMINI_TTS_SAMPLE_RATE = 24000
-GEMINI_TTS_CHANNELS = 1
-GEMINI_TTS_SAMPLE_WIDTH = 2
-
-GEMINI_TTS_PROMPT = """
-اقرأ النص التالي بالعربية الفصحى مع دعم المصطلحات الإنجليزية بشكل صحيح وبصوت إعلاني احترافي.
-النبرة: واثقة، دافئة، جذابة ومحفزة.
-
-تعليمات الأداء الصوتي:
-- استخدم وقفات طبيعية قصيرة بين الجمل والفقرات.
-- أكد بنبرتك على الأسعار، العروض، والكلمات المفتاحية المهمة.
-- اجعل البداية مشوقة وجاذبة للانتباه، والختام حاسمًا ومحفزًا لاتخاذ إجراء (CTA).
-- لا تغنِّ ولا تستخدم أسلوب الإلقاء الشعري.
-- لا تضف أي مؤثرات صوتية أو خلفيات موسيقية.
-- التزم بالنص المرفق حرفيًا بدون زيادة، نقصان، أو تعديل أي كلمة.
-
-النص المراد قراءته:
-{text}
-"""
 
 
 # ================================================================
