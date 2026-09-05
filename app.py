@@ -88,8 +88,8 @@ APP_NAME = "Saeed PostGen Studio"
 BRAND_NAME = "SaeedMarketAds"
 VERSION = "4.5 Ultra"
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_TTS_MODEL = "gemini-2.5-flash-tts-preview"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_TTS_MODEL = "gemini-3.6-flash-tts-preview"
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
 
 TARGET_VERTICAL = (1080, 1920)
