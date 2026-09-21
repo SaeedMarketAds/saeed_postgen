@@ -23,12 +23,20 @@ from core.content_guard import check_content
 # ----------------------------------------------------------------
 # PATHS
 # ----------------------------------------------------------------
+# ----------------------------------------------------------------
+# PATHS
+# ----------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-MEDIA_DIR = BASE_DIR / "media"
+# ----------------------------------------------------------------
+# RUNTIME MEDIA PATHS
+# ----------------------------------------------------------------
+# مسارات مؤقتة قابلة للكتابة على Streamlit Cloud
 
-MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+RUNTIME_DIR = Path("/tmp/saeed_postgen")
+
+MEDIA_DIR = RUNTIME_DIR / "media"
 
 IMAGE_DIR = MEDIA_DIR / "images"
 POST_DIR = MEDIA_DIR / "posts"
@@ -36,18 +44,26 @@ AD_DIR = MEDIA_DIR / "ads"
 REEL_DIR = MEDIA_DIR / "reels"
 VIDEO_DIR = MEDIA_DIR / "videos"
 
-for directory in [
+for directory in (
     IMAGE_DIR,
     POST_DIR,
     AD_DIR,
     REEL_DIR,
     VIDEO_DIR,
-]:
+):
     directory.mkdir(
         parents=True,
         exist_ok=True,
     )
 
+
+# ----------------------------------------------------------------
+# CONFIGURATION
+# ----------------------------------------------------------------
+
+POLLINATIONS_BASE = (
+    "https://image.pollinations.ai/prompt/"
+)
 
 # ----------------------------------------------------------------
 # CONFIGURATION
