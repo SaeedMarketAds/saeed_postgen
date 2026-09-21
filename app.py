@@ -2438,3 +2438,200 @@ def page_reports() -> None:
                     f"{row.get('report_reason', '')} • "
                     f"{row.get('report_status', 'OPEN')}"
                 )
+                # ================================================================
+# MAIN APPLICATION
+# ================================================================
+
+def main() -> None:
+
+    # ------------------------------------------------------------
+    # USER HEADER
+    # ------------------------------------------------------------
+
+    render_user_header()
+
+    # ------------------------------------------------------------
+    # SIDEBAR
+    # ------------------------------------------------------------
+
+    with st.sidebar:
+
+        st.markdown(
+            """
+            <div style="
+                text-align:center;
+                padding:15px 5px 20px 5px;
+            ">
+                <div style="
+                    font-size:26px;
+                    font-weight:800;
+                    color:#D4AF37;
+                ">
+                    Saeed PostGen
+                </div>
+
+                <div style="
+                    font-size:13px;
+                    color:#9AA4B2;
+                    margin-top:4px;
+                ">
+                    SaeedMarketAds
+                </div>
+
+                <div style="
+                    font-size:11px;
+                    color:#667085;
+                    margin-top:6px;
+                ">
+                    Version 4.6
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("---")
+
+        # --------------------------------------------------------
+        # NAVIGATION
+        # --------------------------------------------------------
+
+        page = st.radio(
+            "القائمة الرئيسية",
+            [
+                "🏠 الرئيسية",
+                "🏪 هوية المتجر",
+                "📦 المنتجات",
+                "🎨 التصميم",
+                "🤖 Saeed AI",
+                "🎙️ الصوت",
+                "📢 الحملات",
+                "🖼️ المعرض",
+                "📋 التقارير",
+            ],
+            key="main_page",
+        )
+
+        st.markdown("---")
+
+        # --------------------------------------------------------
+        # USER INFORMATION
+        # --------------------------------------------------------
+
+        user = get_current_user()
+
+        if user:
+
+            full_name = (
+                user.get("full_name")
+                or user.get("username")
+                or "المستخدم"
+            )
+
+            role = (
+                user.get("role")
+                or "merchant"
+            )
+
+            st.markdown(
+                f"""
+                <div class="pg-card">
+
+                    <div style="
+                        font-size:13px;
+                        color:#9AA4B2;
+                    ">
+                        المستخدم الحالي
+                    </div>
+
+                    <div style="
+                        font-size:16px;
+                        font-weight:700;
+                        color:#D4AF37;
+                        margin-top:5px;
+                    ">
+                        👤 {esc(full_name)}
+                    </div>
+
+                    <div style="
+                        font-size:12px;
+                        color:#9AA4B2;
+                        margin-top:4px;
+                    ">
+                        الدور: {esc(role)}
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # --------------------------------------------------------
+        # LOGOUT
+        # --------------------------------------------------------
+
+        if st.button(
+            "🚪 تسجيل الخروج",
+            use_container_width=True,
+        ):
+
+            logout_user()
+
+            st.rerun()
+
+    # ============================================================
+    # PAGE ROUTER
+    # ============================================================
+
+    if page == "🏠 الرئيسية":
+
+        page_dashboard()
+
+    elif page == "🏪 هوية المتجر":
+
+        page_store()
+
+    elif page == "📦 المنتجات":
+
+        page_products()
+
+    elif page == "🎨 التصميم":
+
+        page_design()
+
+    elif page == "🤖 Saeed AI":
+
+        page_ai()
+
+    elif page == "🎙️ الصوت":
+
+        page_voice()
+
+    elif page == "📢 الحملات":
+
+        page_campaigns()
+
+    elif page == "🖼️ المعرض":
+
+        page_gallery()
+
+    elif page == "📋 التقارير":
+
+        page_reports()
+
+
+# ================================================================
+# APPLICATION START
+# ================================================================
+
+try:
+
+    main()
+
+except Exception as exc:
+
+    st.error(
+        "حدث خطأ أثناء تشغيل Saeed PostGen."
+    )
+
+    st.exception(exc)
