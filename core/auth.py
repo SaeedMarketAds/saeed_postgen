@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 from typing import Any
 
@@ -16,12 +17,18 @@ import streamlit as st
 from core.database import execute, fetch_one
 
 
-# ----------------------------------------------------------------
-# PASSWORD SECURITY
-# ----------------------------------------------------------------
+# ================================================================
+# CONFIG
+# ================================================================
 
 HASH_ITERATIONS = 200_000
+MIN_PASSWORD_LENGTH = 6
+MIN_USERNAME_LENGTH = 3
 
+
+# ================================================================
+# PASSWORD SECURITY
+# ================================================================
 
 def hash_password(password: str) -> str:
     """
@@ -53,17 +60,24 @@ def verify_password(
     stored_hash: str,
 ) -> bool:
     """
-    التحقق من كلمة المرور.
+    التحقق من كلمة المرور المشفرة.
     """
 
+    if not password or not stored_hash:
+        return False
+
     try:
-        algorithm, iterations, salt_hex, hash_hex = stored_hash.split("$")
+        parts = stored_hash.split("$")
+
+        if len(parts) != 4:
+            return False
+
+        algorithm, iterations, salt_hex, hash_hex = parts
 
         if algorithm != "pbkdf2_sha256":
             return False
 
         salt = bytes.fromhex(salt_hex)
-
         expected_hash = bytes.fromhex(hash_hex)
 
         actual_hash = hashlib.pbkdf2_hmac(
@@ -81,13 +95,84 @@ def verify_password(
     except (
         ValueError,
         TypeError,
+        OverflowError,
     ):
         return False
 
 
-# ----------------------------------------------------------------
+# ================================================================
+# VALIDATION
+# ================================================================
+
+def normalize_email(email: str) -> str:
+    """
+    تنظيف البريد الإلكتروني وتوحيد حالته.
+    """
+
+    return str(email or "").strip().lower()
+
+
+def normalize_username(username: str) -> str:
+    """
+    تنظيف اسم المستخدم.
+    """
+
+    return str(username or "").strip()
+
+
+def normalize_phone(phone: str) -> str:
+    """
+    تنظيف رقم الهاتف بدون تغيير محتواه.
+    """
+
+    return str(phone or "").strip()
+
+
+def validate_email(email: str) -> bool:
+    """
+    تحقق بسيط من صيغة البريد الإلكتروني.
+    """
+
+    email = normalize_email(email)
+
+    if not email:
+        return False
+
+    pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+    return bool(
+        re.match(
+            pattern,
+            email,
+        )
+    )
+
+
+def validate_username(username: str) -> bool:
+    """
+    التحقق من اسم المستخدم.
+
+    يسمح بالأحرف والأرقام وبعض الرموز الشائعة.
+    """
+
+    username = normalize_username(username)
+
+    if len(username) < MIN_USERNAME_LENGTH:
+        return False
+
+    pattern = r"^[A-Za-z0-9_.\-]+$"
+
+    return bool(
+        re.match(
+            pattern,
+            username,
+        )
+    )
+
+
+# ================================================================
 # SESSION
-# ----------------------------------------------------------------
+# ================================================================
 
 def init_auth_session() -> None:
     """
@@ -98,8 +183,10 @@ def init_auth_session() -> None:
         "authenticated": False,
         "user_id": None,
         "username": "",
+        "email": "",
         "role": "",
         "full_name": "",
+        "remember_me": False,
     }
 
     for key, value in defaults.items():
@@ -134,7 +221,10 @@ def current_user_id() -> int | None:
     try:
         return int(user_id)
 
-    except (TypeError, ValueError):
+    except (
+        TypeError,
+        ValueError,
+    ):
         return None
 
 
@@ -146,6 +236,19 @@ def current_username() -> str:
     return str(
         st.session_state.get(
             "username",
+            "",
+        )
+    )
+
+
+def current_email() -> str:
+    """
+    البريد الإلكتروني للمستخدم الحالي.
+    """
+
+    return str(
+        st.session_state.get(
+            "email",
             "",
         )
     )
@@ -172,9 +275,9 @@ def is_admin() -> bool:
     return current_role() == "admin"
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # REGISTER
-# ----------------------------------------------------------------
+# ================================================================
 
 def register_user(
     username: str,
@@ -188,39 +291,105 @@ def register_user(
     إنشاء حساب مستخدم جديد.
     """
 
-    username = username.strip()
-    full_name = full_name.strip()
-    phone = phone.strip()
-    email = email.strip()
+    username = normalize_username(username)
+    email = normalize_email(email)
+    phone = normalize_phone(phone)
+    full_name = str(full_name or "").strip()
+
+    # ------------------------------------------------------------
+    # BASIC VALIDATION
+    # ------------------------------------------------------------
+
+    if not full_name:
+        return False, "الاسم الكامل مطلوب."
+
+    if not email:
+        return False, "البريد الإلكتروني مطلوب."
+
+    if not validate_email(email):
+        return False, "أدخل بريدًا إلكترونيًا صحيحًا."
 
     if not username:
         return False, "اسم المستخدم مطلوب."
 
-    if len(username) < 3:
-        return False, "اسم المستخدم يجب أن يكون 3 أحرف على الأقل."
+    if len(username) < MIN_USERNAME_LENGTH:
+        return (
+            False,
+            f"اسم المستخدم يجب أن يكون {MIN_USERNAME_LENGTH} أحرف على الأقل.",
+        )
+
+    if not validate_username(username):
+        return (
+            False,
+            "اسم المستخدم يسمح بالأحرف الإنجليزية والأرقام و _ و - و . فقط.",
+        )
 
     if not password:
         return False, "كلمة المرور مطلوبة."
 
-    if len(password) < 6:
-        return False, "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return (
+            False,
+            f"كلمة المرور يجب أن تكون {MIN_PASSWORD_LENGTH} أحرف على الأقل.",
+        )
 
-    if role not in {"merchant", "admin"}:
+    # ------------------------------------------------------------
+    # ROLE
+    # ------------------------------------------------------------
+
+    if role not in {
+        "merchant",
+        "admin",
+    }:
         role = "merchant"
 
-    existing_user = fetch_one(
+    # ------------------------------------------------------------
+    # DUPLICATE USERNAME
+    # ------------------------------------------------------------
+
+    existing_username = fetch_one(
         """
         SELECT id
         FROM users
         WHERE username = ?
+        LIMIT 1
         """,
         (username,),
     )
 
-    if existing_user:
-        return False, "اسم المستخدم موجود مسبقًا."
+    if existing_username:
+        return False, "اسم المستخدم مستخدم مسبقًا."
 
-    password_hash = hash_password(password)
+    # ------------------------------------------------------------
+    # DUPLICATE EMAIL
+    # ------------------------------------------------------------
+
+    existing_email = fetch_one(
+        """
+        SELECT id
+        FROM users
+        WHERE LOWER(email) = ?
+        LIMIT 1
+        """,
+        (email,),
+    )
+
+    if existing_email:
+        return False, "البريد الإلكتروني مستخدم مسبقًا."
+
+    # ------------------------------------------------------------
+    # PASSWORD HASH
+    # ------------------------------------------------------------
+
+    try:
+        password_hash = hash_password(password)
+
+    except ValueError as exc:
+        return False, str(exc)
+
+    # ------------------------------------------------------------
+    # CREATE USER
+    # ------------------------------------------------------------
 
     user_id = execute(
         """
@@ -250,22 +419,43 @@ def register_user(
     return True, "تم إنشاء الحساب بنجاح."
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # LOGIN
-# ----------------------------------------------------------------
+# ================================================================
 
 def login_user(
-    username: str,
+    login_identifier: str,
     password: str,
+    remember_me: bool = False,
 ) -> tuple[bool, str]:
     """
-    تسجيل دخول المستخدم.
+    تسجيل الدخول باستخدام:
+
+    - البريد الإلكتروني
+    أو
+    - اسم المستخدم
     """
 
-    username = username.strip()
+    login_identifier = str(
+        login_identifier or ""
+    ).strip()
 
-    if not username or not password:
-        return False, "أدخل اسم المستخدم وكلمة المرور."
+    password = str(
+        password or ""
+    )
+
+    if not login_identifier:
+        return (
+            False,
+            "أدخل البريد الإلكتروني أو اسم المستخدم.",
+        )
+
+    if not password:
+        return False, "أدخل كلمة المرور."
+
+    # ------------------------------------------------------------
+    # SEARCH BY USERNAME OR EMAIL
+    # ------------------------------------------------------------
 
     user = fetch_one(
         """
@@ -275,18 +465,36 @@ def login_user(
             password_hash,
             role,
             full_name,
+            phone,
+            email,
             is_active
         FROM users
-        WHERE username = ?
+        WHERE
+            username = ?
+            OR LOWER(email) = LOWER(?)
+        LIMIT 1
         """,
-        (username,),
+        (
+            login_identifier,
+            login_identifier,
+        ),
     )
 
     if not user:
         return False, "بيانات الدخول غير صحيحة."
 
-    if not bool(user["is_active"]):
+    # ------------------------------------------------------------
+    # ACTIVE CHECK
+    # ------------------------------------------------------------
+
+    if not bool(
+        user["is_active"]
+    ):
         return False, "هذا الحساب غير نشط."
+
+    # ------------------------------------------------------------
+    # PASSWORD CHECK
+    # ------------------------------------------------------------
 
     if not verify_password(
         password,
@@ -294,18 +502,41 @@ def login_user(
     ):
         return False, "بيانات الدخول غير صحيحة."
 
+    # ------------------------------------------------------------
+    # SESSION
+    # ------------------------------------------------------------
+
     st.session_state.authenticated = True
-    st.session_state.user_id = int(user["id"])
-    st.session_state.username = user["username"]
-    st.session_state.role = user["role"]
-    st.session_state.full_name = user["full_name"] or ""
+    st.session_state.user_id = int(
+        user["id"]
+    )
+
+    st.session_state.username = (
+        user["username"] or ""
+    )
+
+    st.session_state.email = (
+        user["email"] or ""
+    )
+
+    st.session_state.role = (
+        user["role"] or "merchant"
+    )
+
+    st.session_state.full_name = (
+        user["full_name"] or ""
+    )
+
+    st.session_state.remember_me = bool(
+        remember_me
+    )
 
     return True, "تم تسجيل الدخول بنجاح."
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # LOGOUT
-# ----------------------------------------------------------------
+# ================================================================
 
 def logout_user() -> None:
     """
@@ -315,16 +546,26 @@ def logout_user() -> None:
     st.session_state.authenticated = False
     st.session_state.user_id = None
     st.session_state.username = ""
+    st.session_state.email = ""
     st.session_state.role = ""
     st.session_state.full_name = ""
+    st.session_state.remember_me = False
 
-    # الاحتفاظ فقط بحالة المصادقة الأساسية.
+    # تنظيف حقول الدخول
+    for key in (
+        "login_identifier",
+        "login_password",
+        "login_remember",
+    ):
+        if key in st.session_state:
+            del st.session_state[key]
+
     st.rerun()
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # CURRENT USER
-# ----------------------------------------------------------------
+# ================================================================
 
 def get_current_user() -> dict[str, Any] | None:
     """
@@ -349,14 +590,15 @@ def get_current_user() -> dict[str, Any] | None:
             created_at
         FROM users
         WHERE id = ?
+        LIMIT 1
         """,
         (user_id,),
     )
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # AUTH GUARD
-# ----------------------------------------------------------------
+# ================================================================
 
 def require_login() -> bool:
     """
@@ -368,7 +610,9 @@ def require_login() -> bool:
     if is_authenticated():
         return True
 
-    st.warning("🔐 يجب تسجيل الدخول أولًا.")
+    st.warning(
+        "🔐 يجب تسجيل الدخول أولًا."
+    )
 
     return False
 
@@ -382,33 +626,50 @@ def require_admin() -> bool:
         return False
 
     if not is_admin():
-        st.error("⛔ هذه الصفحة مخصصة للإدارة.")
+
+        st.error(
+            "⛔ هذه الصفحة مخصصة للإدارة."
+        )
 
         return False
 
     return True
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # LOGIN UI
-# ----------------------------------------------------------------
+# ================================================================
 
 def render_login_page() -> None:
     """
-    واجهة تسجيل الدخول والتسجيل.
+    واجهة تسجيل الدخول وإنشاء الحساب.
     """
 
     init_auth_session()
+
+    # ============================================================
+    # HEADER
+    # ============================================================
 
     st.markdown(
         """
         <div style="
             text-align:center;
-            padding:20px 0 10px 0;
+            padding:30px 0 18px 0;
         ">
+
+            <div style="
+                font-size:46px;
+                margin-bottom:5px;
+            ">
+                🧠
+            </div>
+
             <h1 style="
                 color:#D4AF37;
-                margin-bottom:5px;
+                margin:0;
+                font-size:34px;
+                font-weight:800;
             ">
                 Saeed PostGen
             </h1>
@@ -416,18 +677,37 @@ def render_login_page() -> None:
             <p style="
                 color:#AAAAAA;
                 font-size:16px;
+                margin-top:8px;
             ">
                 منصة التصميم والتسويق الذكي
             </p>
+
+            <div style="
+                width:90px;
+                height:2px;
+                margin:18px auto 0 auto;
+                background:linear-gradient(
+                    90deg,
+                    transparent,
+                    #D4AF37,
+                    transparent
+                );
+            ">
+            </div>
+
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    # ============================================================
+    # TABS
+    # ============================================================
+
     login_tab, register_tab = st.tabs(
         [
             "🔐 تسجيل الدخول",
-            "👤 إنشاء حساب تاجر",
+            "✨ إنشاء حساب جديد",
         ]
     )
 
@@ -437,29 +717,45 @@ def render_login_page() -> None:
 
     with login_tab:
 
-        st.subheader("تسجيل الدخول")
-
-        username = st.text_input(
-            "اسم المستخدم",
-            key="login_username",
+        st.markdown(
+            "### 🔐 مرحبًا بعودتك"
         )
 
-        password = st.text_input(
-            "كلمة المرور",
+        st.caption(
+            "ادخل بالبريد الإلكتروني أو اسم المستخدم."
+        )
+
+        login_identifier = st.text_input(
+            "📧 البريد الإلكتروني أو اسم المستخدم",
+            placeholder="example@email.com أو username",
+            key="login_identifier",
+        )
+
+        login_password = st.text_input(
+            "🔐 كلمة المرور",
             type="password",
+            placeholder="أدخل كلمة المرور",
             key="login_password",
         )
 
+        remember_me = st.checkbox(
+            "☑️ تذكرني",
+            key="login_remember",
+        )
+
+        st.write("")
+
         if st.button(
-            "دخول",
+            "🚀 دخول إلى Saeed PostGen",
             type="primary",
             use_container_width=True,
             key="login_button",
         ):
 
             success, message = login_user(
-                username,
-                password,
+                login_identifier=login_identifier,
+                password=login_password,
+                remember_me=remember_me,
             )
 
             if success:
@@ -478,51 +774,94 @@ def render_login_page() -> None:
 
     with register_tab:
 
-        st.subheader("إنشاء حساب تاجر")
+        st.markdown(
+            "### ✨ إنشاء حساب جديد"
+        )
+
+        st.caption(
+            "أنشئ حسابك مرة واحدة ثم استخدم البريد أو اسم المستخدم للدخول."
+        )
+
+        # --------------------------------------------------------
+        # FULL NAME
+        # --------------------------------------------------------
 
         full_name = st.text_input(
-            "اسم التاجر",
+            "👤 الاسم الكامل",
+            placeholder="مثال: سعيد المسوري",
             key="register_full_name",
         )
 
-        username = st.text_input(
-            "اسم المستخدم",
-            key="register_username",
-        )
-
-        phone = st.text_input(
-            "رقم التواصل",
-            key="register_phone",
-        )
+        # --------------------------------------------------------
+        # EMAIL
+        # --------------------------------------------------------
 
         email = st.text_input(
-            "البريد الإلكتروني",
+            "📧 البريد الإلكتروني",
+            placeholder="example@email.com",
             key="register_email",
         )
 
+        # --------------------------------------------------------
+        # PHONE
+        # --------------------------------------------------------
+
+        phone = st.text_input(
+            "📱 رقم الهاتف",
+            placeholder="+967xxxxxxxxx",
+            key="register_phone",
+        )
+
+        # --------------------------------------------------------
+        # USERNAME
+        # --------------------------------------------------------
+
+        username = st.text_input(
+            "🆔 اسم المستخدم",
+            placeholder="username",
+            help="استخدم الأحرف الإنجليزية والأرقام و _ أو - أو .",
+            key="register_username",
+        )
+
+        # --------------------------------------------------------
+        # PASSWORD
+        # --------------------------------------------------------
+
         password = st.text_input(
-            "كلمة المرور",
+            "🔐 كلمة المرور",
             type="password",
+            placeholder="أدخل كلمة مرور قوية",
             key="register_password",
         )
 
+        # --------------------------------------------------------
+        # CONFIRM PASSWORD
+        # --------------------------------------------------------
+
         confirm_password = st.text_input(
-            "تأكيد كلمة المرور",
+            "🔐 تأكيد كلمة المرور",
             type="password",
+            placeholder="أعد كتابة كلمة المرور",
             key="register_confirm_password",
         )
 
+        st.write("")
+
         if st.button(
-            "إنشاء حساب",
+            "✨ إنشاء الحساب",
             type="primary",
             use_container_width=True,
             key="register_button",
         ):
 
+            # ----------------------------------------------------
+            # PASSWORD MATCH
+            # ----------------------------------------------------
+
             if password != confirm_password:
 
                 st.error(
-                    "كلمتا المرور غير متطابقتين."
+                    "❌ كلمتا المرور غير متطابقتين."
                 )
 
             else:
@@ -538,10 +877,13 @@ def render_login_page() -> None:
 
                 if success:
 
-                    st.success(message)
+                    st.success(
+                        "✅ تم إنشاء حسابك بنجاح."
+                    )
 
                     st.info(
-                        "يمكنك الآن الانتقال إلى تبويب تسجيل الدخول."
+                        "📧 الآن يمكنك استخدام البريد الإلكتروني "
+                        "أو اسم المستخدم مع كلمة المرور لتسجيل الدخول."
                     )
 
                 else:
@@ -549,9 +891,9 @@ def render_login_page() -> None:
                     st.error(message)
 
 
-# ----------------------------------------------------------------
+# ================================================================
 # USER HEADER
-# ----------------------------------------------------------------
+# ================================================================
 
 def render_user_header() -> None:
     """
@@ -584,13 +926,14 @@ def render_user_header() -> None:
     with col1:
 
         st.caption(
-            f"👤 {name}  •  {role_label}"
+            f"👤 {name}  •  "
+            f"{role_label}"
         )
 
     with col2:
 
         if st.button(
-            "خروج",
+            "🚪 خروج",
             use_container_width=True,
             key="logout_button",
         ):
