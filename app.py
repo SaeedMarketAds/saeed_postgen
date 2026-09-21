@@ -2424,18 +2424,17 @@ def page_reports() -> None:
     )
 
     for row in rows:
-
         with st.container(
             border=True
         ):
-st.write(
-    f"**{row.get('title') or 'بدون عنوان'}** — "
-    f"{render_status(row.get('status'))}"
-)
+            st.write(
+                f"**{row.get('title') or 'بدون عنوان'}** — "
+                f"{render_status(row.get('status'))}"
+            )
 
-if row.get("report_id"):
-    st.caption(
-        f"بلاغ #{row.get('report_id')} • "
-        f"{row.get('report_reason', '')} • "
-        f"{row.get('report_status', 'OPEN')}"
-    )
+            if row.get("report_id"):
+                st.caption(
+                    f"بلاغ #{row.get('report_id')} • "
+                    f"{row.get('report_reason', '')} • "
+                    f"{row.get('report_status', 'OPEN')}"
+                )
