@@ -1,1804 +1,960 @@
 # ================================================================
-# Saeed PostGen Studio - Ultra Edition 4.5
-# SaeedMarketAds | سوق سعيد
-#
-# النسخة المصححة:
-# - فصل الصورة الخام عن الصورة المضاف عليها النص
-# - دعم أفضل للعربية RTL
-# - حماية أفضل للخطوط العربية
-# - منع تكرار النص عند بناء بطاقة الإعلان
-# - تحسين التفاف وتصغير النص
-# - الحفاظ على Streamlit + Pollinations + Gemini + TTS
+# SAEED POSTGEN 4.6
+# UNIFIED STREAMLIT APPLICATION
+# FILE: app.py
 # ================================================================
 
+from __future__ import annotations
+
 import asyncio
+import html
 import io
 import os
 import re
 import tempfile
-import urllib.parse
+import uuid
+from pathlib import Path
+from datetime import datetime
+from typing import Any
 
-import requests
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
+
+from core.database import get_connection, fetch_one, fetch_all, execute, DB_PATH
+from core.auth import (
+    init_auth_session,
+    is_authenticated,
+    current_user_id,
+    current_role,
+    get_current_user,
+    is_admin,
+    logout_user,
+    render_login_page,
+    render_user_header,
+)
+from core.content_guard import (
+    ContentStatus,
+    check_content,
+    check_content_package,
+    status_label,
+)
+from core.engines import (
+    generate_image,
+    generate_post,
+    generate_ad_card,
+    generate_reel,
+    generate_video,
+    add_text_overlay,
+    fit_image,
+)
+
+# Optional AI / voice dependencies are loaded lazily.
+
+BASE_DIR = Path(__file__).resolve().parent
+MEDIA_DIR = BASE_DIR / "media"
+IMAGE_DIR = MEDIA_DIR / "images"
+POST_DIR = MEDIA_DIR / "posts"
+AD_DIR = MEDIA_DIR / "ads"
+REEL_DIR = MEDIA_DIR / "reels"
+VIDEO_DIR = MEDIA_DIR / "videos"
+FONT_DIR = BASE_DIR / "fonts"
+
+APP_NAME = "Saeed PostGen"
+VERSION = "4.6"
+BRAND = "SaeedMarketAds"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+TEMPLATES = ["ذهبي فاخر", "أزرق تقني", "أخضر عصري", "أحمر جريء"]
+EDGE_VOICES = {
+    "سعودي - Hamed": "ar-SA-HamedNeural",
+    "سعودي - Zariyah": "ar-SA-ZariyahNeural",
+    "مصري - Shakir": "ar-EG-ShakirNeural",
+    "مصري - Salma": "ar-EG-SalmaNeural",
+    "إماراتي - Hamdan": "ar-AE-HamdanNeural",
+    "إماراتي - Fatima": "ar-AE-FatimaNeural",
+    "أردني - Taim": "ar-JO-TaimNeural",
+    "أردنية - Sana": "ar-JO-SanaNeural",
+}
+
+for folder in (IMAGE_DIR, POST_DIR, AD_DIR, REEL_DIR, VIDEO_DIR):
+    folder.mkdir(parents=True, exist_ok=True)
 
 
-# ================================================================
-# 1. LIBRARIES / FALLBACKS
-# ================================================================
-
-try:
-    from google import genai
-    from google.genai import types
-
-    GEMINI_AVAILABLE = True
-except Exception:
-    genai = None
-    types = None
-    GEMINI_AVAILABLE = False
-
-
-try:
-    import edge_tts
-
-    EDGE_TTS_AVAILABLE = True
-except Exception:
-    edge_tts = None
-    EDGE_TTS_AVAILABLE = False
-
-
-try:
-    from gtts import gTTS
-
-    GTTS_AVAILABLE = True
-except Exception:
-    gTTS = None
-    GTTS_AVAILABLE = False
-
-
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    ARABIC_SUPPORT = True
-except Exception:
-    arabic_reshaper = None
-    get_display = None
-    ARABIC_SUPPORT = False
-
-
-# ================================================================
-# 2. CONFIG
-# ================================================================
+# ----------------------------------------------------------------
+# PAGE / STYLE
+# ----------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Saeed PostGen Studio",
-    page_icon="🎬",
+    page_title="Saeed PostGen 4.6",
+    page_icon="🎨",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-APP_NAME = "Saeed PostGen Studio"
-BRAND_NAME = "SaeedMarketAds"
-VERSION = "4.5 Ultra"
 
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
-
-POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
-
-TARGET_VERTICAL = (1080, 1920)
-TARGET_SQUARE = (1080, 1080)
-
-
-# ================================================================
-# 3. VOICES
-# ================================================================
-
-EDGE_VOICES = {
-    "🇸🇦 حامد — سعودي": "ar-SA-HamedNeural",
-    "🇸🇦 زارية — سعودية": "ar-SA-ZariyahNeural",
-    "🇪🇬 شاكر — مصري": "ar-EG-ShakirNeural",
-    "🇪🇬 سلمى — مصرية": "ar-EG-SalmaNeural",
-    "🇦🇪 فاطمة — إماراتية": "ar-AE-FatimaNeural",
-    "🇦🇪 حمد — إماراتي": "ar-AE-HamdanNeural",
-    "🇰🇼 نواف — كويتي": "ar-KW-NouraNeural",
-    "🇯🇴 سند — أردني": "ar-JO-TaimNeural",
-}
-
-GEMINI_VOICES = {
-    "Kore — ثابت وقوي": "Kore",
-    "Puck — حيوي": "Puck",
-    "Charon — معلوماتي": "Charon",
-    "Leda — شبابي": "Leda",
-    "Aoede — هادئ": "Aoede",
-    "Sulafat — دافئ": "Sulafat",
-}
-
-
-# ================================================================
-# 4. TEMPLATES
-# ================================================================
-
-TEMPLATES = {
-    "ذهبي فاخر": {
-        "bg": (15, 23, 42),
-        "accent": (251, 191, 36),
-        "text": (255, 255, 255),
-        "sub": (205, 205, 205),
-    },
-    "أزرق تقني": {
-        "bg": (8, 20, 40),
-        "accent": (56, 189, 248),
-        "text": (255, 255, 255),
-        "sub": (185, 205, 225),
-    },
-    "أخضر عصري": {
-        "bg": (10, 30, 24),
-        "accent": (52, 211, 153),
-        "text": (255, 255, 255),
-        "sub": (185, 220, 205),
-    },
-    "أحمر جريء": {
-        "bg": (35, 12, 12),
-        "accent": (248, 113, 113),
-        "text": (255, 255, 255),
-        "sub": (220, 190, 190),
-    },
-}
-
-
-# ================================================================
-# 5. SESSION STATE
-# ================================================================
-
-DEFAULT_MESSAGES = [
-    {
-        "role": "assistant",
-        "content": (
-            "أهلاً بك في **Saeed PostGen Studio** 🎬\n"
-            "كيف أمكنني مساعدتك في خطتك التسويقية اليوم؟"
-        ),
-    }
-]
-
-SESSION_DEFAULTS = {
-    "gallery": [],
-    "last_ad_card": None,
-
-    # الصورة التي عليها النص
-    "last_generated_image": None,
-
-    # الصورة الخام قبل أي كتابة
-    "last_raw_image": None,
-
-    "last_reel_video": None,
-    "messages": DEFAULT_MESSAGES.copy(),
-}
-
-for key, default in SESSION_DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-
-# ================================================================
-# 6. CSS
-# ================================================================
-
-st.markdown(
-    """
-<style>
-
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Cairo', sans-serif;
-}
-
-.stApp {
-    background:
-        radial-gradient(
-            circle at 70% 20%,
-            rgba(180, 130, 255, 0.08),
-            transparent 60%
-        ),
-        radial-gradient(
-            circle at 30% 80%,
-            rgba(251, 191, 36, 0.05),
-            transparent 60%
-        ),
-        linear-gradient(
-            145deg,
-            #0b0f1a 0%,
-            #141b2b 50%,
-            #1a1030 100%
-        );
-}
-
-.sma-header {
-    padding: 25px;
-    border-radius: 20px;
-    background:
-        linear-gradient(
-            135deg,
-            rgba(180, 130, 255, 0.15),
-            rgba(15, 23, 42, 0.9)
-        );
-    border: 1px solid rgba(180, 130, 255, 0.25);
-    margin-bottom: 20px;
-    backdrop-filter: blur(5px);
-}
-
-.sma-title {
-    font-size: 32px;
-    font-weight: 800;
-    background:
-        linear-gradient(
-            135deg,
-            #fbbf24,
-            #f59e0b
-        );
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.sma-chat-user {
-    padding: 14px 18px;
-    border-radius: 16px 16px 2px 16px;
-    background: rgba(180, 130, 255, 0.15);
-    border: 1px solid rgba(180, 130, 255, 0.2);
-    margin: 8px 0;
-    color: #e2e8f0;
-}
-
-.sma-chat-ai {
-    padding: 14px 18px;
-    border-radius: 16px 16px 16px 2px;
-    background: rgba(30, 41, 59, 0.85);
-    border: 1px solid rgba(255,255,255,0.08);
-    margin: 8px 0;
-    color: #f1f5f9;
-}
-
-div.stButton > button {
-    border-radius: 12px;
-    font-weight: 700;
-    min-height: 46px;
-    background:
-        linear-gradient(
-            135deg,
-            #fbbf24,
-            #f59e0b
-        );
-    color: #0b0f1a;
-    border: none;
-}
-
-.sma-info {
-    padding: 12px 16px;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.07);
-    margin: 10px 0;
-}
-
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-
-# ================================================================
-# 7. CORE UTILITIES
-# ================================================================
-
-def get_secret(*names):
-    for name in names:
-        try:
-            value = st.secrets.get(name)
-        except Exception:
-            value = None
-
-        if value:
-            return str(value).strip()
-
-        value = os.getenv(name)
-
-        if value:
-            return str(value).strip()
-
-    return ""
-
-
-def clean_text(text):
-    if not text:
-        return ""
-
-    text = re.sub(
-        r"```(?:text|markdown|python)?",
-        "",
-        str(text),
-        flags=re.IGNORECASE,
+def inject_css() -> None:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background:
+                radial-gradient(circle at 20% 0%, rgba(212,175,55,.08), transparent 30%),
+                radial-gradient(circle at 90% 20%, rgba(30,80,140,.10), transparent 35%),
+                #070b12;
+            color: #f4f4f4;
+        }
+        .block-container { max-width: 1450px; padding-top: 1.2rem; }
+        .pg-card {
+            background: linear-gradient(145deg, rgba(18,24,35,.96), rgba(8,12,19,.96));
+            border: 1px solid rgba(212,175,55,.18);
+            border-radius: 18px;
+            padding: 18px;
+            margin-bottom: 14px;
+        }
+        .pg-gold { color: #d4af37; }
+        .pg-muted { color: #9aa4b2; }
+        .pg-title { font-size: 2rem; font-weight: 800; }
+        .pg-subtitle { color: #9aa4b2; margin-top: -8px; }
+        .metric-box {
+            background: #0d131d;
+            border: 1px solid rgba(255,255,255,.07);
+            border-radius: 16px;
+            padding: 14px;
+            text-align: center;
+        }
+        .metric-value { font-size: 1.7rem; font-weight: 800; color: #d4af37; }
+        .metric-label { color: #aab2bf; font-size: .85rem; }
+        .status-approved { color: #48d597; font-weight: 700; }
+        .status-review { color: #e7b84b; font-weight: 700; }
+        .status-blocked { color: #ff6969; font-weight: 700; }
+        div[data-testid="stSidebar"] { background: #080c13; }
+        .stButton > button { border-radius: 10px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-    text = text.replace("```", "")
 
+inject_css()
+init_auth_session()
+
+if not is_authenticated():
+    render_login_page()
+    st.stop()
+
+
+# ----------------------------------------------------------------
+# DATABASE HELPERS
+# ----------------------------------------------------------------
+
+def db_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    return fetch_one(query, params)
+
+
+def db_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    return fetch_all(query, params)
+
+
+def now_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def user_store() -> dict[str, Any] | None:
+    uid = current_user_id()
+    if not uid:
+        return None
+    return db_one("SELECT * FROM stores WHERE user_id=? ORDER BY id LIMIT 1", (uid,))
+
+
+def ensure_store() -> dict[str, Any] | None:
+    store = user_store()
+    if store:
+        return store
+    return None
+
+
+def save_store(data: dict[str, Any]) -> tuple[bool, str, int]:
+    uid = current_user_id()
+    if not uid:
+        return False, "لا يوجد مستخدم مسجل", 0
+
+    existing = user_store()
+    if existing:
+        execute(
+            """UPDATE stores SET page_name=?, slug=?, logo_path=?, cover_path=?,
+               primary_color=?, secondary_color=?, phone=?, description=?,
+               business_type=?, updated_at=? WHERE id=?""",
+            (
+                data.get("page_name", ""), data.get("slug", ""),
+                data.get("logo_path", ""), data.get("cover_path", ""),
+                data.get("primary_color", "#D4AF37"), data.get("secondary_color", "#0B0F19"),
+                data.get("phone", ""), data.get("description", ""),
+                data.get("business_type", ""), now_text(), existing["id"],
+            ),
+        )
+        return True, "تم تحديث هوية المتجر", int(existing["id"])
+
+    store_id = execute(
+        """INSERT INTO stores
+        (user_id,page_name,slug,logo_path,cover_path,primary_color,secondary_color,
+         phone,description,business_type,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            uid,
+            data.get("page_name", ""), data.get("slug", ""),
+            data.get("logo_path", ""), data.get("cover_path", ""),
+            data.get("primary_color", "#D4AF37"), data.get("secondary_color", "#0B0F19"),
+            data.get("phone", ""), data.get("description", ""),
+            data.get("business_type", ""), now_text(), now_text(),
+        ),
+    )
+    return True, "تم إنشاء هوية المتجر", int(store_id)
+
+
+def save_uploaded_file(uploaded: Any, directory: Path, prefix: str) -> str:
+    if uploaded is None:
+        return ""
+    suffix = Path(uploaded.name).suffix.lower() or ".png"
+    name = f"{prefix}_{uuid.uuid4().hex[:10]}{suffix}"
+    path = directory / name
+    path.write_bytes(uploaded.getvalue())
+    return str(path.relative_to(BASE_DIR))
+
+
+def absolute_path(relative_path: str) -> Path | None:
+    if not relative_path:
+        return None
+    p = BASE_DIR / relative_path
+    return p if p.exists() else None
+
+
+def store_id_for_user() -> int | None:
+    store = user_store()
+    return int(store["id"]) if store else None
+
+
+def save_product(name: str, description: str, price: str, currency: str,
+                 image_path: str, specifications: str) -> tuple[bool, str]:
+    uid = current_user_id()
+    sid = store_id_for_user()
+    if not uid or not sid:
+        return False, "أنشئ هوية المتجر أولاً."
+    try:
+        pid = execute(
+            """INSERT INTO products
+            (user_id,store_id,name,description,price,currency,image_path,specifications,is_active,created_at)
+            VALUES (?,?,?,?,?,?,?,?,1,?)""",
+            (uid, sid, name, description, price, currency, image_path, specifications, now_text()),
+        )
+        return True, f"تم حفظ المنتج #{pid}"
+    except Exception as exc:
+        return False, f"تعذر حفظ المنتج: {exc}"
+
+
+def save_content(content_type: str, title: str, description: str,
+                 file_path: str, status: str, reason: str) -> int:
+    uid = current_user_id()
+    sid = store_id_for_user()
+    if not uid or not sid:
+        return 0
+    return execute(
+        """INSERT INTO content
+        (user_id,store_id,content_type,title,description,file_path,status,guard_reason,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (uid, sid, content_type, title, description, file_path, status, reason, now_text(), now_text()),
+    )
+
+
+def save_campaign(name: str, objective: str, platform: str, budget: str,
+                  currency: str, start_date: str, end_date: str) -> tuple[bool, str]:
+    uid = current_user_id()
+    sid = store_id_for_user()
+    if not uid or not sid:
+        return False, "أنشئ هوية المتجر أولاً."
+    try:
+        cid = execute(
+            """INSERT INTO campaigns
+            (user_id,store_id,name,objective,platform,budget,currency,start_date,end_date,status,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,'DRAFT',?)""",
+            (uid, sid, name, objective, platform, budget, currency, start_date, end_date, now_text()),
+        )
+        return True, f"تم حفظ الحملة #{cid} كمسودة"
+    except Exception as exc:
+        return False, f"تعذر حفظ الحملة: {exc}"
+
+
+def count_rows(table: str, where: str = "", params: tuple[Any, ...] = ()) -> int:
+    allowed = {"users", "stores", "products", "content", "campaigns", "reports"}
+    if table not in allowed:
+        return 0
+    row = db_one(f"SELECT COUNT(*) AS n FROM {table} {where}", params)
+    return int(row["n"]) if row else 0
+
+
+# ----------------------------------------------------------------
+# GENERAL HELPERS
+# ----------------------------------------------------------------
+
+def esc(value: Any) -> str:
+    return html.escape(str(value or ""))
+
+
+def file_bytes(relative_path: str) -> bytes | None:
+    p = absolute_path(relative_path)
+    if not p:
+        return None
+    try:
+        return p.read_bytes()
+    except Exception:
+        return None
+
+
+def render_status(status: str) -> str:
+    s = str(status or "REVIEW").upper()
+    if s == "APPROVED":
+        return "🟢 APPROVED"
+    if s == "BLOCKED":
+        return "🔴 BLOCKED"
+    return "🟡 REVIEW"
+
+
+def guard_preview(title: str, description: str, text: str = "") -> Any:
+    return check_content_package(title=title, description=description, text=text)
+
+
+def save_generated_result(result: dict[str, Any], content_type: str,
+                          title: str, description: str) -> int:
+    path = result.get("path", "")
+    status = str(result.get("status", "REVIEW"))
+    message = str(result.get("message", ""))
+    return save_content(content_type, title, description, path, status, message)
+
+
+# ----------------------------------------------------------------
+# GEMINI
+# ----------------------------------------------------------------
+
+def gemini_generate(prompt: str) -> tuple[bool, str]:
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not key:
+        try:
+            key = st.secrets.get("GEMINI_API_KEY", "")
+        except Exception:
+            key = ""
+    if not key:
+        return False, "لم يتم ضبط GEMINI_API_KEY أو GOOGLE_API_KEY."
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=key)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+        text = getattr(response, "text", None)
+        if not text:
+            return False, "Gemini لم يرجع نصًا."
+        return True, str(text)
+    except Exception as exc:
+        return False, f"خطأ Gemini: {exc}"
+
+
+# ----------------------------------------------------------------
+# TTS
+# ----------------------------------------------------------------
+
+def clean_tts_text(text: str) -> str:
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"```.*?```", "", text, flags=re.S)
+    text = re.sub(r"[*_#>`]", "", text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
-def arabic_text(text):
-    """
-    تجهيز العربية للعرض الصحيح داخل Pillow.
-    """
+def create_tts(text: str, voice: str) -> tuple[bool, str, bytes | None]:
+    text = clean_tts_text(text)
     if not text:
-        return ""
+        return False, "النص فارغ.", None
+    try:
+        import edge_tts
+        out = Path(tempfile.gettempdir()) / f"saeed_postgen_{uuid.uuid4().hex}.mp3"
 
-    text = str(text)
+        async def run() -> None:
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(str(out))
 
-    if ARABIC_SUPPORT:
+        asyncio.run(run())
+        return True, "تم إنشاء الصوت.", out.read_bytes()
+    except Exception as edge_exc:
         try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            pass
+            from gtts import gTTS
+            fp = Path(tempfile.gettempdir()) / f"saeed_postgen_{uuid.uuid4().hex}.mp3"
+            gTTS(text=text, lang="ar").save(str(fp))
+            return True, "تم إنشاء الصوت عبر gTTS.", fp.read_bytes()
+        except Exception as gtts_exc:
+            return False, f"تعذر إنشاء الصوت: {edge_exc} / {gtts_exc}", None
 
-    return text
 
+# ----------------------------------------------------------------
+# HEADER
+# ----------------------------------------------------------------
 
-def prepare_tts_text(text):
-    if not text:
-        return ""
-
-    text = re.sub(
-        r'[^ء-ي\s0-9،.؟!;:()\-"]',
-        " ",
-        str(text),
+def render_header(title: str, subtitle: str = "") -> None:
+    st.markdown(
+        f"""
+        <div class='pg-card' dir='rtl'>
+            <div class='pg-title'>🎨 <span class='pg-gold'>{esc(title)}</span></div>
+            <div class='pg-subtitle'>{esc(subtitle)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    return re.sub(r"\s+", " ", text).strip()
 
+# ----------------------------------------------------------------
+# PAGES
+# ----------------------------------------------------------------
 
-# ================================================================
-# 8. ARABIC FONT SYSTEM
-# ================================================================
+def page_dashboard() -> None:
+    render_header("Saeed PostGen 4.6", "محرك تصميم وتنفيذ المحتوى التجاري — جاهز للتكامل مع Saeed LogiC")
+    uid = current_user_id()
+    sid = store_id_for_user()
 
-@st.cache_resource
-def find_arabic_font_path():
-    """
-    البحث عن خط عربي حقيقي.
-    لا نعتمد على ImageFont.load_default()
-    للنصوص العربية.
-    """
-
-    candidates = [
-        "fonts/Cairo-Bold.ttf",
-        "fonts/Cairo-Regular.ttf",
-
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    cols = st.columns(5)
+    metrics = [
+        ("👤", "الحساب", 1),
+        ("🏪", "المتجر", count_rows("stores", "WHERE user_id=?", (uid,)) if uid else 0),
+        ("📦", "المنتجات", count_rows("products", "WHERE user_id=?", (uid,)) if uid else 0),
+        ("🎨", "المحتوى", count_rows("content", "WHERE user_id=?", (uid,)) if uid else 0),
+        ("📢", "الحملات", count_rows("campaigns", "WHERE user_id=?", (uid,)) if uid else 0),
     ]
+    for col, (icon, label, value) in zip(cols, metrics):
+        with col:
+            st.markdown(
+                f"<div class='metric-box'><div>{icon}</div><div class='metric-value'>{value}</div><div class='metric-label'>{esc(label)}</div></div>",
+                unsafe_allow_html=True,
+            )
 
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
+    st.markdown("### 🚀 مركز التنفيذ")
+    a, b, c, d = st.columns(4)
+    with a:
+        st.info("🎨 **التصميم**\n\nصورة، منشور، بطاقة إعلان، Story.")
+    with b:
+        st.info("🎬 **الفيديو**\n\nReel Cover ثم MP4 من صورة ثابتة.")
+    with c:
+        st.info("🛡️ **Content Guard**\n\nAPPROVED / REVIEW / BLOCKED.")
+    with d:
+        st.info("🧠 **جاهز لـ LogiC**\n\nالمحركات منفصلة عن الواجهة.")
 
-    return None
-
-
-def get_font(size=40, bold=True):
-    """
-    تحميل خط مناسب.
-    """
-
-    preferred = [
-        "fonts/Cairo-Bold.ttf" if bold else "fonts/Cairo-Regular.ttf",
-
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf"
-        if bold
-        else "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
-        if bold
-        else "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if bold
-        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-
-    for path in preferred:
-        if os.path.isfile(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except Exception:
-                continue
-
-    # آخر حل فقط
-    return ImageFont.load_default()
+    if sid is None:
+        st.warning("ابدأ من صفحة 🏪 هوية المتجر قبل حفظ المنتجات والمحتوى.")
+    else:
+        store = user_store()
+        st.success(f"المتجر الحالي: {store.get('page_name','')}" if store else "المتجر جاهز")
 
 
-# ================================================================
-# 9. TEXT FITTING
-# ================================================================
+def page_store() -> None:
+    render_header("هوية المتجر", "هوية مستقلة لكل تاجر محفوظة في postgen.db")
+    store = user_store() or {}
 
-def text_width(draw, text, font):
-    rendered = arabic_text(text)
+    with st.form("store_form"):
+        page_name = st.text_input("اسم الصفحة / المتجر", value=store.get("page_name", ""))
+        slug = st.text_input("Slug", value=store.get("slug", ""))
+        business_type = st.text_input("نوع النشاط", value=store.get("business_type", ""))
+        phone = st.text_input("رقم التواصل", value=store.get("phone", ""))
+        description = st.text_area("وصف النشاط", value=store.get("description", ""), height=100)
+        primary = st.color_picker("اللون الأساسي", value=store.get("primary_color", "#D4AF37"))
+        secondary = st.color_picker("اللون الثانوي", value=store.get("secondary_color", "#0B0F19"))
+        logo = st.file_uploader("الشعار", type=["png", "jpg", "jpeg", "webp"], key="store_logo")
+        cover = st.file_uploader("الغلاف", type=["png", "jpg", "jpeg", "webp"], key="store_cover")
+        submitted = st.form_submit_button("💾 حفظ هوية المتجر", use_container_width=True)
 
-    bbox = draw.textbbox(
-        (0, 0),
-        rendered,
-        font=font,
-    )
+    if submitted:
+        logo_path = store.get("logo_path", "")
+        cover_path = store.get("cover_path", "")
+        if logo:
+            logo_path = save_uploaded_file(logo, IMAGE_DIR, "store_logo")
+        if cover:
+            cover_path = save_uploaded_file(cover, IMAGE_DIR, "store_cover")
+        ok, msg, _ = save_store({
+            "page_name": page_name,
+            "slug": slug,
+            "logo_path": logo_path,
+            "cover_path": cover_path,
+            "primary_color": primary,
+            "secondary_color": secondary,
+            "phone": phone,
+            "description": description,
+            "business_type": business_type,
+        })
+        (st.success if ok else st.error)(msg)
+        if ok:
+            st.rerun()
 
-    return bbox[2] - bbox[0]
-
-
-def fit_font_to_width(
-    draw,
-    text,
-    base_font_size,
-    max_width,
-    bold=True,
-    min_size=16,
-):
-    if not text:
-        return get_font(base_font_size, bold)
-
-    size = int(base_font_size)
-
-    while size >= min_size:
-        font = get_font(size, bold)
-
-        if text_width(draw, text, font) <= max_width:
-            return font
-
-        size -= 2
-
-    return get_font(min_size, bold)
-
-
-def wrap_text_to_width(draw, text, font, max_width):
-    """
-    التفاف عربي/إنجليزي بدون قص.
-    """
-
-    if not text:
-        return []
-
-    words = str(text).split()
-
-    if not words:
-        return []
-
-    lines = []
-    current = ""
-
-    for word in words:
-
-        candidate = (
-            f"{current} {word}".strip()
-            if current
-            else word
-        )
-
-        if text_width(draw, candidate, font) <= max_width:
-            current = candidate
-        else:
-
-            if current:
-                lines.append(current)
-
-            current = word
-
+    current = user_store()
     if current:
-        lines.append(current)
+        st.markdown("### معاينة الهوية")
+        if current.get("cover_path") and absolute_path(current["cover_path"]):
+            st.image(str(absolute_path(current["cover_path"])), use_container_width=True)
+        x, y = st.columns([1, 3])
+        with x:
+            if current.get("logo_path") and absolute_path(current["logo_path"]):
+                st.image(str(absolute_path(current["logo_path"])), width=160)
+        with y:
+            st.subheader(current.get("page_name", ""))
+            st.write(current.get("description", ""))
+            st.caption(f"{current.get('business_type','')} • {current.get('phone','')}")
 
-    return lines
 
-
-# ================================================================
-# 10. DRAW TEXT
-# ================================================================
-
-def draw_centered_text(
-    draw,
-    text,
-    y,
-    font,
-    fill,
-    width,
-    shadow=True,
-):
-    if not text:
+def page_products() -> None:
+    render_header("المنتجات", "كتالوج التاجر الذي يمكن استخدامه لاحقًا كمصدر بيانات لـ Saeed LogiC")
+    if not store_id_for_user():
+        st.warning("أنشئ هوية المتجر أولاً.")
         return
 
-    rendered = arabic_text(text)
+    with st.form("product_form"):
+        name = st.text_input("اسم المنتج")
+        description = st.text_area("الوصف")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            price = st.text_input("السعر")
+        with c2:
+            currency = st.text_input("العملة", value="USD")
+        with c3:
+            image = st.file_uploader("صورة المنتج", type=["png", "jpg", "jpeg", "webp"])
+        specifications = st.text_area("المواصفات")
+        submit = st.form_submit_button("📦 حفظ المنتج", use_container_width=True)
 
-    bbox = draw.textbbox(
-        (0, 0),
-        rendered,
-        font=font,
+    if submit:
+        if not name.strip():
+            st.error("اسم المنتج مطلوب.")
+        else:
+            image_path = save_uploaded_file(image, IMAGE_DIR, "product") if image else ""
+            ok, msg = save_product(name, description, price, currency, image_path, specifications)
+            (st.success if ok else st.error)(msg)
+
+    rows = db_all("SELECT * FROM products WHERE user_id=? ORDER BY id DESC", (current_user_id(),))
+    st.markdown("### المنتجات المحفوظة")
+    for row in rows:
+        c1, c2 = st.columns([1, 4])
+        with c1:
+            p = absolute_path(row.get("image_path", ""))
+            if p:
+                st.image(str(p), width=150)
+        with c2:
+            st.markdown(f"**{esc(row.get('name'))}**", unsafe_allow_html=True)
+            st.write(row.get("description", ""))
+            st.caption(f"{row.get('price','')} {row.get('currency','')} | {row.get('specifications','')}")
+
+
+def page_design() -> None:
+    render_header("التصميم", "PostGen ينفذ التصميم؛ أما فهم القرار التسويقي الذكي فيبقى من اختصاص Saeed LogiC لاحقًا.")
+
+    if not store_id_for_user():
+        st.warning("أنشئ هوية المتجر أولاً.")
+        return
+
+    content_type = st.selectbox(
+        "نوع المحتوى",
+        ["منشور", "بطاقة إعلان", "Story", "Reel", "فيديو"],
     )
 
-    tw = bbox[2] - bbox[0]
-
-    x = int((width - tw) / 2)
-
-    if shadow:
-        draw.text(
-            (x + 3, y + 3),
-            rendered,
-            font=font,
-            fill=(0, 0, 0),
-        )
-
-    draw.text(
-        (x, y),
-        rendered,
-        font=font,
-        fill=fill,
-    )
-
-
-def draw_wrapped_centered_text(
-    draw,
-    text,
-    y,
-    font,
-    fill,
-    width,
-    max_width,
-    line_spacing=10,
-    shadow=True,
-):
-    if not text:
-        return 0
-
-    lines = wrap_text_to_width(
-        draw,
-        text,
-        font,
-        max_width,
-    )
-
-    if not lines:
-        return 0
-
-    sample_bbox = draw.textbbox(
-        (0, 0),
-        arabic_text("أب"),
-        font=font,
-    )
-
-    line_height = (
-        sample_bbox[3] - sample_bbox[1]
-    ) + line_spacing
-
-    current_y = y
-
-    for line in lines:
-        draw_centered_text(
-            draw,
-            line,
-            current_y,
-            font,
-            fill,
-            width,
-            shadow=shadow,
-        )
-
-        current_y += line_height
-
-    return current_y - y
-
-
-# ================================================================
-# 11. GEMINI
-# ================================================================
-
-@st.cache_resource
-def get_gemini_client():
-    key = get_secret(
-        "GEMINI_API_KEY",
-        "GEMINI_MAIN_KEY",
-    )
-
-    if GEMINI_AVAILABLE and key:
-        return genai.Client(api_key=key)
-
-    return None
-
-
-def gemini_generate_text(
-    prompt,
-    model=DEFAULT_GEMINI_MODEL,
-):
-    client = get_gemini_client()
-
-    if not client:
-        raise RuntimeError(
-            "مفتاح GEMINI_API_KEY غير متاح "
-            "أو مكتبة google-genai غير مثبتة."
-        )
-
-    system_instruction = (
-        "أنت Saeed AI، المساعد الذكي الخاص "
-        "بمنصة SaeedMarketAds للتسويق الرقمي "
-        "وإدارة المحتوى."
-    )
-
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.7,
-        ),
-    )
-
-    return clean_text(
-        getattr(response, "text", "")
-    )
-
-
-# ================================================================
-# 12. POLLINATIONS IMAGE
-# ================================================================
-
-def generate_pollinations_image(
-    prompt,
-    width=1024,
-    height=1024,
-):
-    if not prompt:
-        raise ValueError("وصف الصورة فارغ.")
-
-    enhanced = (
-        "Commercial product photography, "
-        "professional studio setup, "
-        "ultra detailed, high quality, "
-        "clean commercial composition, "
-        f"{prompt}"
-    )
-
-    encoded_prompt = urllib.parse.quote(
-        enhanced
-    )
-
-    url = (
-        f"{POLLINATIONS_BASE}"
-        f"{encoded_prompt}"
-        f"?width={width}"
-        f"&height={height}"
-        f"&nologo=true"
-    )
-
-    response = requests.get(
-        url,
-        timeout=90,
-        headers={
-            "User-Agent": "SaeedMarketAds/4.5"
-        },
-    )
-
-    response.raise_for_status()
-
-    image = Image.open(
-        io.BytesIO(response.content)
-    ).convert("RGB")
-
-    return image, url
-
-
-# ================================================================
-# 13. IMAGE FIT
-# ================================================================
-
-def fit_image_to_canvas(image, size):
-    if image is None:
-        return None
-
-    image = image.convert("RGB")
-
-    target_w, target_h = size
-    source_w, source_h = image.size
-
-    scale = max(
-        target_w / source_w,
-        target_h / source_h,
-    )
-
-    new_w = int(source_w * scale)
-    new_h = int(source_h * scale)
-
-    image = image.resize(
-        (new_w, new_h),
-        Image.Resampling.LANCZOS,
-    )
-
-    left = (new_w - target_w) // 2
-    top = (new_h - target_h) // 2
-
-    return image.crop(
-        (
-            left,
-            top,
-            left + target_w,
-            top + target_h,
-        )
-    )
-
-
-# ================================================================
-# 14. TEXT OVERLAY
-# ================================================================
-
-def add_text_overlay(
-    image,
-    title="",
-    brand=BRAND_NAME,
-    contact="",
-):
-    """
-    إضافة النصوص إلى نسخة من الصورة الخام.
-
-    مهم:
-    لا نعدل الصورة الأصلية.
-    """
-
-    if image is None:
-        return None
-
-    img_with_text = image.copy().convert("RGB")
-
-    draw = ImageDraw.Draw(
-        img_with_text
-    )
-
-    width, height = img_with_text.size
-
-    content_width = int(
-        width * 0.88
-    )
-
-    # ------------------------------------------------------------
-    # Brand
-    # ------------------------------------------------------------
-
-    if brand:
-        brand_font = fit_font_to_width(
-            draw,
-            brand,
-            max(24, int(height * 0.045)),
-            content_width,
-            bold=True,
-            min_size=18,
-        )
-
-        draw_centered_text(
-            draw,
-            brand,
-            int(height * 0.045),
-            brand_font,
-            (255, 255, 255),
-            width,
-            shadow=True,
-        )
-
-    # ------------------------------------------------------------
-    # Title
-    # ------------------------------------------------------------
-
-    if title:
-        title_font = fit_font_to_width(
-            draw,
-            title,
-            max(24, int(height * 0.055)),
-            content_width,
-            bold=True,
-            min_size=18,
-        )
-
-        # صندوق شبه شفاف خلف العنوان
-        overlay = Image.new(
-            "RGBA",
-            img_with_text.size,
-            (0, 0, 0, 0),
-        )
-
-        overlay_draw = ImageDraw.Draw(
-            overlay
-        )
-
-        title_y = int(
-            height * 0.72
-        )
-
-        title_height = max(
-            100,
-            int(height * 0.16),
-        )
-
-        overlay_draw.rounded_rectangle(
-            (
-                int(width * 0.04),
-                title_y - 20,
-                int(width * 0.96),
-                min(
-                    height - 20,
-                    title_y + title_height,
-                ),
-            ),
-            radius=30,
-            fill=(0, 0, 0, 150),
-        )
-
-        img_with_text = Image.alpha_composite(
-            img_with_text.convert("RGBA"),
-            overlay,
-        ).convert("RGB")
-
-        draw = ImageDraw.Draw(
-            img_with_text
-        )
-
-        draw_wrapped_centered_text(
-            draw,
-            title,
-            title_y,
-            title_font,
-            (255, 215, 0),
-            width,
-            content_width,
-            line_spacing=8,
-            shadow=True,
-        )
-
-    # ------------------------------------------------------------
-    # Contact
-    # ------------------------------------------------------------
-
-    if contact:
-        contact_font = fit_font_to_width(
-            draw,
-            contact,
-            max(20, int(height * 0.035)),
-            content_width,
-            bold=True,
-            min_size=16,
-        )
-
-        draw_centered_text(
-            draw,
-            contact,
-            int(height * 0.90),
-            contact_font,
-            (255, 255, 255),
-            width,
-            shadow=True,
-        )
-
-    return img_with_text
-
-
-# ================================================================
-# 15. AD CARD
-# ================================================================
-
-def build_ad_card(
-    product_name,
-    storage,
-    ram,
-    price,
-    contact,
-    template_name,
-    product_image=None,
-):
-    """
-    بناء بطاقة الإعلان النهائية.
-
-    product_image هنا يجب أن تكون الصورة الخام،
-    وليس صورة سبق أن أضيف عليها نص.
-    """
-
-    if template_name not in TEMPLATES:
-        template_name = "ذهبي فاخر"
-
-    tmpl = TEMPLATES[
-        template_name
-    ]
-
-    W, H = TARGET_SQUARE
-
-    canvas = Image.new(
-        "RGB",
-        (W, H),
-        tmpl["bg"],
-    )
-
-    draw = ImageDraw.Draw(canvas)
-
-    content_width = W - 140
-
-    # ============================================================
-    # HEADER
-    # ============================================================
-
-    draw.rounded_rectangle(
-        (50, 40, W - 50, 140),
-        radius=20,
-        fill=tmpl["accent"],
-    )
-
-    header_text = (
-        "SaeedMarketAds • العرض الذهبي"
-    )
-
-    header_font = fit_font_to_width(
-        draw,
-        header_text,
-        38,
-        W - 120,
-        bold=True,
-        min_size=20,
-    )
-
-    draw_centered_text(
-        draw,
-        header_text,
-        65,
-        header_font,
-        tmpl["bg"],
-        W,
-        shadow=False,
-    )
-
-    # ============================================================
-    # PRODUCT IMAGE
-    # ============================================================
-
-    img_box = (
-        90,
-        170,
-        W - 90,
-        600,
-    )
-
-    if product_image is not None:
-
-        fit_img = fit_image_to_canvas(
-            product_image,
-            (
-                img_box[2] - img_box[0],
-                img_box[3] - img_box[1],
-            ),
-        )
-
-        canvas.paste(
-            fit_img,
-            (
-                img_box[0],
-                img_box[1],
-            ),
-        )
-
+    products = db_all("SELECT * FROM products WHERE user_id=? AND is_active=1 ORDER BY id DESC", (current_user_id(),))
+    product_names = [p.get("name", "") for p in products]
+
+    title = st.text_input("العنوان", value="")
+    prompt = st.text_area("وصف التصميم / Prompt", height=120,
+                          placeholder="مثال: إعلان فاخر لهاتف ذكي، خلفية تقنية داكنة، إضاءة احترافية")
+    contact = st.text_input("رقم التواصل", value=(user_store() or {}).get("phone", ""))
+
+    if content_type == "بطاقة إعلان":
+        product_name = st.selectbox("المنتج", product_names) if product_names else st.text_input("اسم المنتج")
+        price = st.text_input("السعر")
+        specifications = st.text_area("المواصفات")
+        template = st.selectbox("القالب", TEMPLATES)
+        product_upload = st.file_uploader("صورة المنتج — اختياري", type=["png", "jpg", "jpeg", "webp"])
     else:
+        product_name = ""
+        price = ""
+        specifications = ""
+        template = TEMPLATES[0]
+        product_upload = None
 
-        draw.rounded_rectangle(
-            img_box,
-            radius=25,
-            outline=tmpl["accent"],
-            width=3,
-        )
+    st.markdown("### 🛡️ الفحص قبل التنفيذ")
+    guard = guard_preview(title, prompt, product_name if content_type == "بطاقة إعلان" else "")
+    st.write(render_status(guard.status.value))
+    st.caption(guard.message)
+    if guard.reasons:
+        st.warning(" • ".join(guard.reasons))
 
-        placeholder = "PRODUCT"
+    generate = st.button("✨ توليد المحتوى", type="primary", use_container_width=True)
+    if not generate:
+        return
 
-        placeholder_font = get_font(
-            42,
-            True,
-        )
+    if guard.status == ContentStatus.BLOCKED:
+        st.error("تم إيقاف التنفيذ بواسطة Content Guard.")
+        return
+    if not title.strip() and content_type != "بطاقة إعلان":
+        st.error("العنوان مطلوب.")
+        return
 
-        draw_centered_text(
-            draw,
-            placeholder,
-            350,
-            placeholder_font,
-            tmpl["accent"],
-            W,
-            shadow=False,
-        )
+    store = user_store() or {}
+    brand = store.get("page_name") or BRAND
 
-    # ============================================================
-    # PRODUCT NAME
-    # ============================================================
-
-    if product_name:
-
-        name_font = fit_font_to_width(
-            draw,
-            product_name,
-            54,
-            content_width,
-            bold=True,
-            min_size=24,
-        )
-
-        draw_wrapped_centered_text(
-            draw,
-            product_name,
-            640,
-            name_font,
-            tmpl["text"],
-            W,
-            content_width,
-            line_spacing=8,
-            shadow=True,
-        )
-
-    # ============================================================
-    # SPECS
-    # ============================================================
-
-    specs_parts = []
-
-    if storage:
-        specs_parts.append(
-            f"التخزين: {storage}"
-        )
-
-    if ram:
-        specs_parts.append(
-            f"الرام: {ram}"
-        )
-
-    specs = "  |  ".join(
-        specs_parts
-    )
-
-    if specs:
-
-        specs_font = fit_font_to_width(
-            draw,
-            specs,
-            30,
-            content_width,
-            bold=False,
-            min_size=18,
-        )
-
-        draw_centered_text(
-            draw,
-            specs,
-            720,
-            specs_font,
-            tmpl["sub"],
-            W,
-            shadow=False,
-        )
-
-    # ============================================================
-    # PRICE
-    # ============================================================
-
-    draw.rounded_rectangle(
-        (200, 790, W - 200, 920),
-        radius=25,
-        fill=tmpl["accent"],
-    )
-
-    price_text = (
-        f"{price} ريال"
-        if price
-        else "السعر عند الطلب"
-    )
-
-    price_font = fit_font_to_width(
-        draw,
-        price_text,
-        50,
-        W - 440,
-        bold=True,
-        min_size=22,
-    )
-
-    draw_centered_text(
-        draw,
-        price_text,
-        825,
-        price_font,
-        tmpl["bg"],
-        W,
-        shadow=False,
-    )
-
-    # ============================================================
-    # CONTACT
-    # ============================================================
-
-    if contact:
-
-        contact_text = (
-            f"للتواصل والطلب: {contact}"
-        )
-
-        contact_font = fit_font_to_width(
-            draw,
-            contact_text,
-            32,
-            content_width,
-            bold=True,
-            min_size=18,
-        )
-
-        draw_centered_text(
-            draw,
-            contact_text,
-            970,
-            contact_font,
-            tmpl["text"],
-            W,
-            shadow=True,
-        )
-
-    # ============================================================
-    # FOOTER
-    # ============================================================
-
-    footer = (
-        "سوق سعيد • دليلك الذكي للتسويق الرقمي"
-    )
-
-    footer_font = fit_font_to_width(
-        draw,
-        footer,
-        24,
-        content_width,
-        bold=False,
-        min_size=16,
-    )
-
-    draw_centered_text(
-        draw,
-        footer,
-        1020,
-        footer_font,
-        tmpl["sub"],
-        W,
-        shadow=False,
-    )
-
-    return canvas
-
-
-# ================================================================
-# 16. TTS
-# ================================================================
-
-def run_async(coro):
     try:
-        return asyncio.run(coro)
+        result: dict[str, Any]
+        final_type = content_type
 
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-
-
-async def _edge_tts_process(
-    text,
-    voice,
-    out_path,
-    rate="+0%",
-    pitch="+0Hz",
-):
-    communicator = edge_tts.Communicate(
-        prepare_tts_text(text),
-        voice,
-        rate=rate,
-        pitch=pitch,
-    )
-
-    await communicator.save(
-        out_path
-    )
-
-
-def generate_voice(
-    text,
-    engine,
-    voice,
-    rate="+0%",
-    pitch="+0Hz",
-):
-    extension = (
-        ".wav"
-        if engine == "Gemini TTS"
-        else ".mp3"
-    )
-
-    fd, out_path = tempfile.mkstemp(
-        suffix=extension
-    )
-
-    os.close(fd)
-
-    if (
-        engine == "Edge TTS"
-        and EDGE_TTS_AVAILABLE
-    ):
-        run_async(
-            _edge_tts_process(
-                text,
-                voice,
-                out_path,
-                rate,
-                pitch,
-            )
-        )
-
-        return out_path, "Edge TTS"
-
-    if GTTS_AVAILABLE:
-
-        tts = gTTS(
-            text=prepare_tts_text(text),
-            lang="ar",
-            slow=False,
-        )
-
-        tts.save(out_path)
-
-        return out_path, "gTTS"
-
-    raise RuntimeError(
-        "تعذر معالجة النص الصوتي."
-    )
-
-
-# ================================================================
-# 17. SIDEBAR
-# ================================================================
-
-with st.sidebar:
-
-    st.markdown(
-        """
-        <h2 style='text-align:center; color:#fbbf24;'>
-            Saeed Studio
-        </h2>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.caption(
-        f"الإصدار: {VERSION}"
-    )
-
-    st.divider()
-
-    if st.button(
-        "🗑️ مسح الذاكرة المؤقتة",
-        use_container_width=True,
-    ):
-        st.session_state.gallery = []
-        st.session_state.last_generated_image = None
-        st.session_state.last_raw_image = None
-        st.session_state.last_ad_card = None
-        st.rerun()
-
-    st.divider()
-
-    st.markdown(
-        """
-        <div class="sma-info">
-        <b>نظام الصور:</b><br>
-        الصورة الخام منفصلة عن الصورة التي تحتوي على النص.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ================================================================
-# 18. HEADER
-# ================================================================
-
-st.markdown(
-    """
-    <div class="sma-header">
-
-        <div class="sma-title">
-            🎬 Saeed PostGen Studio
-        </div>
-
-        <div style="color:#cbd5e1;">
-            الاستوديو الذكي المتكامل لإدارة وإنشاء المحتوى التسويقي
-        </div>
-
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ================================================================
-# 19. TABS
-# ================================================================
-
-tab_ai, tab_image, tab_ad, tab_gallery = st.tabs(
-    [
-        "💬 الذكاء الاصطناعي",
-        "🎨 توليد الصور",
-        "📱 بطاقة الإعلان",
-        "🖼️ المعرض",
-    ]
-)
-
-
-# ================================================================
-# 20. TAB 1 — AI
-# ================================================================
-
-with tab_ai:
-
-    for msg in st.session_state.messages:
-
-        css_class = (
-            "sma-chat-user"
-            if msg["role"] == "user"
-            else "sma-chat-ai"
-        )
-
-        name = (
-            "أنت"
-            if msg["role"] == "user"
-            else "🤖 Saeed AI"
-        )
-
-        content = (
-            str(msg["content"])
-            .replace("\n", "<br>")
-        )
-
-        st.markdown(
-            f"""
-            <div class="{css_class}">
-                <b>{name}</b><br>
-                {content}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    user_input = st.chat_input(
-        "اكتب أفكارك التسويقية هنا..."
-    )
-
-    if user_input:
-
-        st.session_state.messages.append(
-            {
-                "role": "user",
-                "content": user_input,
-            }
-        )
-
-        try:
-
-            bot_response = gemini_generate_text(
-                user_input
+        if content_type == "منشور":
+            result = generate_post(
+                title=title,
+                prompt=prompt,
+                brand=brand,
+                contact=contact,
+                filename=f"post_{uuid.uuid4().hex[:10]}.png",
             )
 
-        except Exception as error:
-
-            bot_response = (
-                "⚠️ خطأ أثناء المعالجة: "
-                f"{error}"
+        elif content_type == "بطاقة إعلان":
+            uploaded_path = save_uploaded_file(product_upload, IMAGE_DIR, "ad_product") if product_upload else ""
+            product_image = absolute_path(uploaded_path) if uploaded_path else None
+            result = generate_ad_card(
+                product_name=product_name,
+                price=price,
+                specifications=specifications,
+                contact=contact,
+                brand=brand,
+                template="gold",
+                product_image=product_image,
+                filename=f"ad_{uuid.uuid4().hex[:10]}.png",
             )
+            final_type = "بطاقة إعلان"
 
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": bot_response,
-            }
-        )
-
-        st.rerun()
-
-
-# ================================================================
-# 21. TAB 2 — IMAGE GENERATOR
-# ================================================================
-
-with tab_image:
-
-    st.subheader(
-        "🎨 مولد الصور التسويقية"
-    )
-
-    prompt_in = st.text_area(
-        "وصف الصورة التسويقية المطلوبة:",
-        placeholder=(
-            "هاتف أبل آيفون باللون البرتقالي "
-            "على خلفية سوداء فاخرة، "
-            "إضاءة استوديو احترافية..."
-        ),
-        height=120,
-    )
-
-    col_a, col_b = st.columns(2)
-
-    with col_a:
-
-        ad_title = st.text_input(
-            "نص الإعلان على الصورة",
-            "",
-            placeholder="مثال: خصم 30% لفترة محدودة",
-        )
-
-    with col_b:
-
-        ad_contact = st.text_input(
-            "رقم التواصل على الصورة",
-            "",
-            placeholder="مثال: 967770000000",
-        )
-
-    if st.button(
-        "✨ إنتاج الصورة الآن",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        if not prompt_in.strip():
-
-            st.warning(
-                "الرجاء إدخال وصف الصورة أولاً."
+        elif content_type == "Story":
+            raw = generate_image(
+                prompt or title,
+                width=1080,
+                height=1920,
+                filename=f"story_raw_{uuid.uuid4().hex[:10]}.png",
             )
+            if not raw.get("success"):
+                result = raw
+            else:
+                img = raw.get("image")
+                if img is None and raw.get("path"):
+                    img = Image.open(raw["path"])
+                final = add_text_overlay(
+                    img,
+                    title=title,
+                    brand=brand,
+                    contact=contact,
+                    size=(1080, 1920),
+                )
+                out = POST_DIR / f"story_{uuid.uuid4().hex[:10]}.png"
+                final.save(out, format="PNG")
+                result = {
+                    "success": True,
+                    "status": raw.get("status", "APPROVED"),
+                    "message": "تم إنشاء Story.",
+                    "path": str(out.relative_to(BASE_DIR)),
+                    "image": final,
+                }
+                final_type = "Story"
+
+        elif content_type == "Reel":
+            result = generate_reel(
+                title=title,
+                prompt=prompt,
+                brand=brand,
+                contact=contact,
+                filename=f"reel_cover_{uuid.uuid4().hex[:10]}.png",
+            )
+            final_type = "Reel"
 
         else:
+            source = st.session_state.get("last_generated_path", "")
+            if not source:
+                st.error("أنشئ صورة أو منشورًا أولاً ثم حوّله إلى فيديو.")
+                return
+            src = absolute_path(source)
+            if not src:
+                st.error("ملف المصدر غير موجود.")
+                return
+            out = VIDEO_DIR / f"video_{uuid.uuid4().hex[:10]}.mp4"
+            result = generate_video(str(src), output_path=str(out), duration=10, fps=30)
+            final_type = "فيديو"
 
-            with st.spinner(
-                "جاري إنشاء الصورة..."
-            ):
+        if result.get("success"):
+            st.session_state.last_generated_path = result.get("path", "")
+            st.session_state.last_generated_result = result
+            cid = save_generated_result(result, final_type, title or product_name, prompt or specifications)
+            st.success(f"تم التنفيذ والحفظ. Content ID: {cid}")
+        else:
+            st.error(result.get("message", "تعذر التنفيذ."))
 
-                try:
+    except Exception as exc:
+        st.exception(exc)
 
-                    # ------------------------------------------------
-                    # STEP 1
-                    # توليد الصورة الخام
-                    # ------------------------------------------------
+    result = st.session_state.get("last_generated_result")
+    if result and result.get("path"):
+        st.markdown("### النتيجة")
+        p = absolute_path(result["path"])
+        if p and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+            st.image(str(p), use_container_width=True)
+        elif p and p.suffix.lower() == ".mp4":
+            st.video(str(p))
+        data = file_bytes(result["path"])
+        if data:
+            mime = "video/mp4" if p and p.suffix.lower() == ".mp4" else "image/png"
+            st.download_button("📥 تنزيل الملف", data=data, file_name=p.name if p else "output", mime=mime)
 
-                    raw_image, image_url = (
-                        generate_pollinations_image(
-                            prompt_in
-                        )
+
+def page_ai() -> None:
+    render_header("Saeed AI Assistant", "مساعد نصي للتجربة فقط؛ لا يمثل عقل Saeed LogiC النهائي.")
+    if "ai_messages" not in st.session_state:
+        st.session_state.ai_messages = []
+
+    for msg in st.session_state.ai_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    prompt = st.chat_input("اكتب طلبك التسويقي أو فكرة التصميم...")
+    if prompt:
+        st.session_state.ai_messages.append({"role": "user", "content": prompt})
+        ok, answer = gemini_generate(
+            "أنت مساعد تسويق عربي لمنصة Saeed PostGen. "
+            "حلل الطلب واقترح نوع المحتوى والعنوان والوصف والتصميم دون الادعاء أنك نفذت التصميم.\n\n"
+            + prompt
+        )
+        if not ok:
+            answer = answer + "\n\nيمكنك استخدام صفحة التصميم مباشرة لتنفيذ المحتوى يدويًا."
+        st.session_state.ai_messages.append({"role": "assistant", "content": answer})
+        st.rerun()
+
+
+def page_voice() -> None:
+    render_header("الصوت", "تحويل النص إلى صوت — يعمل من الكتابة ولا يتطلب ميكروفونًا.")
+    text = st.text_area("النص", height=180)
+    voice_name = st.selectbox("الصوت", list(EDGE_VOICES.keys()))
+    if st.button("🎙️ إنشاء الصوت", type="primary", use_container_width=True):
+        ok, msg, data = create_tts(text, EDGE_VOICES[voice_name])
+        (st.success if ok else st.error)(msg)
+        if data:
+            st.audio(data, format="audio/mp3")
+            st.download_button("📥 تنزيل الصوت", data=data, file_name="saeed_postgen_voice.mp3", mime="audio/mpeg")
+
+
+def page_campaigns() -> None:
+    render_header("الحملات المدفوعة", "إدارة بيانات الحملة داخل PostGen. النشر الفعلي على المنصات الخارجية يحتاج تكامل APIs/OAuth لاحقًا.")
+    if not store_id_for_user():
+        st.warning("أنشئ هوية المتجر أولاً.")
+        return
+
+    with st.form("campaign_form"):
+        name = st.text_input("اسم الحملة")
+        objective = st.text_input("الهدف")
+        platform = st.selectbox("المنصة", ["Facebook", "Instagram", "TikTok", "YouTube", "Google", "أخرى"])
+        c1, c2 = st.columns(2)
+        with c1:
+            budget = st.text_input("الميزانية")
+            currency = st.text_input("العملة", value="USD")
+        with c2:
+            start = st.date_input("تاريخ البداية")
+            end = st.date_input("تاريخ النهاية")
+        submit = st.form_submit_button("📢 حفظ الحملة", use_container_width=True)
+
+    if submit:
+        if not name.strip():
+            st.error("اسم الحملة مطلوب.")
+        else:
+            ok, msg = save_campaign(name, objective, platform, budget, currency, str(start), str(end))
+            (st.success if ok else st.error)(msg)
+
+    rows = db_all("SELECT * FROM campaigns WHERE user_id=? ORDER BY id DESC", (current_user_id(),))
+    for row in rows:
+        with st.container(border=True):
+            st.markdown(f"**{esc(row.get('name'))}**", unsafe_allow_html=True)
+            st.write(f"الهدف: {row.get('objective','')} | المنصة: {row.get('platform','')}")
+            st.caption(f"{row.get('budget','')} {row.get('currency','')} • {row.get('start_date','')} → {row.get('end_date','')} • {row.get('status','DRAFT')}")
+
+
+def page_gallery() -> None:
+    render_header("معرض التاجر", "المعرض الدائم من postgen.db + الملفات المحفوظة داخل media/")
+    rows = db_all("SELECT * FROM content WHERE user_id=? ORDER BY id DESC", (current_user_id(),))
+    if not rows:
+        st.info("لا يوجد محتوى محفوظ حتى الآن.")
+        return
+
+    for row in rows:
+        path = row.get("file_path", "")
+        p = absolute_path(path)
+        with st.container(border=True):
+            c1, c2 = st.columns([1.2, 2])
+            with c1:
+                if p and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                    st.image(str(p), use_container_width=True)
+                elif p and p.suffix.lower() == ".mp4":
+                    st.video(str(p))
+                else:
+                    st.caption("الملف غير موجود")
+            with c2:
+                st.subheader(row.get("title") or "بدون عنوان")
+                st.write(row.get("description", ""))
+                st.write(render_status(row.get("status", "REVIEW")))
+                st.caption(f"النوع: {row.get('content_type','')} • ID: {row.get('id')}")
+                if p and p.exists():
+                    data = p.read_bytes()
+                    mime = "video/mp4" if p.suffix.lower() == ".mp4" else "image/png"
+                    st.download_button("📥 تنزيل", data=data, file_name=p.name, mime=mime, key=f"download_{row['id']}")
+
+
+def page_reports() -> None:
+    render_header("التقارير والمراجعة", "Content Guard يسجل حالة المحتوى؛ يمكن للتاجر الإبلاغ عن محتوى يحتاج مراجعة.")
+    rows = db_all("""SELECT c.*, r.id AS report_id, r.reason AS report_reason, r.status AS report_status
+                     FROM content c LEFT JOIN reports r ON r.content_id=c.id
+                     WHERE c.user_id=? ORDER BY c.id DESC""", (current_user_id(),))
+    for row in rows:
+        with st.container(border=True):
+            st.write(f"**{row.get('title') or 'بدون عنوان'}** — {render_status(row.get('status'))}")
+            if row.get("report_id"):
+                st.caption(f"بلاغ #{row['report_id']} • {row.get('report_reason','')} • {row.get('report_status','OPEN')}")
+            with st.form(f"report_{row['id']}"):
+                reason = st.text_input("سبب البلاغ", key=f"reason_{row['id']}")
+                details = st.text_area("تفاصيل", key=f"details_{row['id']}")
+                submit = st.form_submit_button("🚩 إرسال بلاغ")
+                if submit:
+                    execute(
+                        """INSERT INTO reports(content_id,reporter_user_id,reason,details,status,created_at)
+                           VALUES (?,?,?,?,'OPEN',?)""",
+                        (row["id"], current_user_id(), reason, details, now_text()),
                     )
-
-                    # ------------------------------------------------
-                    # STEP 2
-                    # حفظ الصورة الخام منفصلة
-                    # ------------------------------------------------
-
-                    st.session_state.last_raw_image = (
-                        raw_image
-                    )
-
-                    # ------------------------------------------------
-                    # STEP 3
-                    # إضافة النص
-                    # ------------------------------------------------
-
-                    final_image = add_text_overlay(
-                        raw_image,
-                        title=ad_title,
-                        brand=BRAND_NAME,
-                        contact=ad_contact,
-                    )
-
-                    # ------------------------------------------------
-                    # STEP 4
-                    # حفظ الصورة النهائية
-                    # ------------------------------------------------
-
-                    st.session_state.last_generated_image = (
-                        final_image
-                    )
-
-                    # ------------------------------------------------
-                    # STEP 5
-                    # المعرض
-                    # ------------------------------------------------
-
-                    st.session_state.gallery.append(
-                        {
-                            "title": "صورة مولدة",
-                            "image": final_image,
-                        }
-                    )
-
-                    st.success(
-                        "✅ تم إنشاء الصورة وتركيب النص بنجاح."
-                    )
-
-                    st.image(
-                        final_image,
-                        caption=(
-                            "الصورة النهائية "
-                            "بعد تركيب النص"
-                        ),
-                        use_container_width=True,
-                    )
-
-                    st.caption(
-                        "الصورة الخام محفوظة داخليًا "
-                        "لاستخدامها في بطاقة الإعلان."
-                    )
-
-                except Exception as error:
-
-                    st.error(
-                        "⚠️ تعذر توليد الصورة: "
-                        f"{error}"
-                    )
-
-
-# ================================================================
-# 22. TAB 3 — AD CARD
-# ================================================================
-
-with tab_ad:
-
-    st.subheader(
-        "📱 إنشاء بطاقة الإعلان"
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        p_name = st.text_input(
-            "اسم المنتج",
-            "iPhone 17 Pro Max",
-        )
-
-        p_storage = st.text_input(
-            "المساحة",
-            "512GB",
-        )
-
-        p_ram = st.text_input(
-            "الرام",
-            "16GB",
-        )
-
-    with col2:
-
-        p_price = st.text_input(
-            "السعر",
-            "4800",
-        )
-
-        p_contact = st.text_input(
-            "رقم التواصل",
-            "967770000000",
-        )
-
-        p_tmpl = st.selectbox(
-            "القالب التصميمي",
-            list(TEMPLATES.keys()),
-        )
-
-    st.divider()
-
-    use_ai_img = st.checkbox(
-        "استخدام الصورة الخام المولدة بالذكاء الاصطناعي",
-        value=bool(
-            st.session_state.last_raw_image
-        ),
-    )
-
-    p_img_file = st.file_uploader(
-        "رفع صورة المنتج (اختياري)",
-        type=[
-            "png",
-            "jpg",
-            "jpeg",
-            "webp",
-        ],
-    )
-
-    # ============================================================
-    # IMPORTANT:
-    # هنا نستخدم الصورة الخام فقط.
-    # ============================================================
-
-    p_img = None
-
-    if (
-        use_ai_img
-        and st.session_state.last_raw_image
-        is not None
-    ):
-
-        p_img = (
-            st.session_state.last_raw_image
-        )
-
-        st.success(
-            "🖼️ سيتم استخدام الصورة الخام "
-            "بدون النص السابق."
-        )
-
-    elif p_img_file:
-
-        try:
-
-            p_img = Image.open(
-                p_img_file
-            ).convert("RGB")
-
-        except Exception as error:
-
-            st.error(
-                "⚠️ تعذر قراءة الصورة: "
-                f"{error}"
-            )
-
-    if st.button(
-        "🚀 صمم البطاقة",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        try:
-
-            card = build_ad_card(
-                product_name=p_name,
-                storage=p_storage,
-                ram=p_ram,
-                price=p_price,
-                contact=p_contact,
-                template_name=p_tmpl,
-                product_image=p_img,
-            )
-
-            st.session_state.last_ad_card = card
-
-            st.session_state.gallery.append(
-                {
-                    "title": (
-                        f"إعلان - {p_name}"
-                    ),
-                    "image": card,
-                }
-            )
-
-            st.success(
-                "✅ تم إنشاء بطاقة الإعلان."
-            )
-
-            st.image(
-                card,
-                caption="بطاقة الإعلان النهائية",
-                use_container_width=True,
-            )
-
-        except Exception as error:
-
-            st.error(
-                "⚠️ تعذر إنشاء البطاقة: "
-                f"{error}"
-            )
-
-
-# ================================================================
-# 23. TAB 4 — GALLERY
-# ================================================================
-
-with tab_gallery:
-
-    st.subheader(
-        "🖼️ معرض التصاميم"
-    )
-
-    if not st.session_state.gallery:
-
-        st.info(
-            "المعرض فارغ حالياً."
-        )
-
-    else:
-
-        cols = st.columns(3)
-
-        for index, item in enumerate(
-            reversed(
-                st.session_state.gallery
-            )
-        ):
-
-            with cols[index % 3]:
-
-                st.image(
-                    item["image"],
-                    caption=item["title"],
-                    use_container_width=True,
-                )
-
-
-# ================================================================
-# 24. DEBUG / STATUS
-# ================================================================
-
-with st.expander(
-    "🔧 حالة النظام",
-    expanded=False,
-):
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-
-        st.write(
-            "Gemini:",
-            "✅ متاح"
-            if GEMINI_AVAILABLE
-            else "❌ غير متاح",
-        )
-
-    with col2:
-
-        st.write(
-            "Edge TTS:",
-            "✅ متاح"
-            if EDGE_TTS_AVAILABLE
-            else "❌ غير متاح",
-        )
-
-    with col3:
-
-        st.write(
-            "Arabic RTL:",
-            "✅ متاح"
-            if ARABIC_SUPPORT
-            else "⚠️ غير متاح",
-        )
-
-    font_path = find_arabic_font_path()
-
-    if font_path:
-
-        st.success(
-            f"الخط المستخدم: {font_path}"
-        )
-
-    else:
-
-        st.warning(
-            "⚠️ لم يتم العثور على خط عربي "
-            "مخصص؛ سيتم استخدام الخط الاحتياطي."
-        )
-
-    st.write(
-        "الصورة الخام محفوظة:",
-        st.session_state.last_raw_image is not None,
-    )
-
-    st.write(
-        "الصورة النهائية محفوظة:",
-        st.session_state.last_generated_image is not None,
-    )
-
-    st.write(
-        "بطاقة الإعلان محفوظة:",
-        st.session_state.last_ad_card is not None,
-    )
+                    st.success("تم إرسال البلاغ.")
+
+
+def page_account() -> None:
+    render_header("حساب التاجر", "بيانات الحساب محفوظة عبر نظام المصادقة")
+    user = get_current_user() or {}
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write(f"**اسم المستخدم:** {user.get('username','')}")
+        st.write(f"**الاسم:** {user.get('full_name','')}")
+        st.write(f"**الدور:** {user.get('role','merchant')}")
+    with c2:
+        st.write(f"**الهاتف:** {user.get('phone','')}")
+        st.write(f"**البريد:** {user.get('email','')}")
+        st.write(f"**الحالة:** {'نشط' if user.get('is_active',1) else 'غير نشط'}")
+
+
+def page_admin() -> None:
+    if not is_admin():
+        st.error("هذه الصفحة للإدارة فقط.")
+        return
+
+    render_header("لوحة الإدارة", "إشراف على الحسابات والمتاجر والمحتوى والحملات والبلاغات.")
+    cols = st.columns(6)
+    vals = [
+        ("👥", "Users", count_rows("users")),
+        ("🏪", "Stores", count_rows("stores")),
+        ("📦", "Products", count_rows("products")),
+        ("🎨", "Content", count_rows("content")),
+        ("📢", "Campaigns", count_rows("campaigns")),
+        ("🚩", "Reports", count_rows("reports")),
+    ]
+    for col, (icon, label, value) in zip(cols, vals):
+        with col:
+            st.markdown(f"<div class='metric-box'><div>{icon}</div><div class='metric-value'>{value}</div><div class='metric-label'>{label}</div></div>", unsafe_allow_html=True)
+
+    st.markdown("### 🛡️ المحتوى قيد المراجعة")
+    review = db_all("SELECT * FROM content WHERE status='REVIEW' ORDER BY id DESC")
+    if not review:
+        st.success("لا توجد عناصر قيد المراجعة.")
+    for row in review:
+        with st.container(border=True):
+            st.write(f"**#{row['id']} — {row.get('title','')}**")
+            st.caption(row.get("guard_reason", ""))
+            p = absolute_path(row.get("file_path", ""))
+            if p and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                st.image(str(p), width=320)
+            a, b = st.columns(2)
+            with a:
+                if st.button("🟢 اعتماد", key=f"approve_{row['id']}"):
+                    execute("UPDATE content SET status='APPROVED', reviewed_at=?, updated_at=? WHERE id=?", (now_text(), now_text(), row["id"]))
+                    st.rerun()
+            with b:
+                if st.button("🔴 حظر", key=f"block_{row['id']}"):
+                    execute("UPDATE content SET status='BLOCKED', reviewed_at=?, updated_at=? WHERE id=?", (now_text(), now_text(), row["id"]))
+                    st.rerun()
+
+    st.markdown("### 👥 التجار")
+    users = db_all("SELECT id,username,full_name,role,is_active,created_at FROM users ORDER BY id DESC")
+    st.dataframe(users, use_container_width=True)
+
+    st.markdown("### 🚩 البلاغات")
+    reports = db_all("""SELECT r.*, c.title, c.status AS content_status
+                       FROM reports r LEFT JOIN content c ON c.id=r.content_id
+                       ORDER BY r.id DESC""")
+    st.dataframe(reports, use_container_width=True)
+
+
+# ----------------------------------------------------------------
+# NAVIGATION
+# ----------------------------------------------------------------
+
+def main() -> None:
+    user = get_current_user() or {}
+
+    with st.sidebar:
+        st.markdown(f"## 🎨 {APP_NAME}")
+        st.caption(f"v{VERSION} • {BRAND}")
+        render_user_header()
+
+        pages = [
+            "🏠 الرئيسية",
+            "👤 الحساب",
+            "🏪 هوية المتجر",
+            "📦 المنتجات",
+            "🎨 التصميم",
+            "🤖 AI",
+            "🎙️ الصوت",
+            "📢 الحملات",
+            "🖼️ المعرض",
+            "🚩 التقارير",
+        ]
+        if is_admin():
+            pages.append("👑 الإدارة")
+
+        page = st.radio("التنقل", pages, label_visibility="collapsed")
+
+        st.divider()
+        st.caption(f"المستخدم: {user.get('username','')}")
+        st.caption(f"الدور: {user.get('role','merchant')}")
+        st.caption(f"DB: {DB_PATH.name}")
+
+        if st.button("🚪 تسجيل الخروج", use_container_width=True):
+            logout_user()
+
+    if page == "🏠 الرئيسية":
+        page_dashboard()
+    elif page == "👤 الحساب":
+        page_account()
+    elif page == "🏪 هوية المتجر":
+        page_store()
+    elif page == "📦 المنتجات":
+        page_products()
+    elif page == "🎨 التصميم":
+        page_design()
+    elif page == "🤖 AI":
+        page_ai()
+    elif page == "🎙️ الصوت":
+        page_voice()
+    elif page == "📢 الحملات":
+        page_campaigns()
+    elif page == "🖼️ المعرض":
+        page_gallery()
+    elif page == "🚩 التقارير":
+        page_reports()
+    elif page == "👑 الإدارة":
+        page_admin()
+
+
+if __name__ == "__main__":
+    main()
