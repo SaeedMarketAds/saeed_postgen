@@ -18,6 +18,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from core.content_guard import check_content
+import tempfile
 
 
 # ----------------------------------------------------------------
@@ -34,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ----------------------------------------------------------------
 # مسارات مؤقتة قابلة للكتابة على Streamlit Cloud
 
-RUNTIME_DIR = Path("/tmp/saeed_postgen")
+RUNTIME_DIR = Path(tempfile.gettempdir()) / "saeed_postgen"
 
 MEDIA_DIR = RUNTIME_DIR / "media"
 
@@ -439,6 +440,7 @@ def draw_centered_text(
         (0, 0),
         text,
         font=font,
+        direction="rtl",
     )
 
     text_width = (
@@ -454,6 +456,7 @@ def draw_centered_text(
         text,
         font=font,
         fill=fill,
+        direction="rtl",
     )
 
 
