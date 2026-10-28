@@ -527,9 +527,6 @@ def login_user(
         user["full_name"] or ""
     )
 
-    st.session_state.remember_me = bool(
-        remember_me
-    )
 
     return True, "تم تسجيل الدخول بنجاح."
 
@@ -738,10 +735,6 @@ def render_login_page() -> None:
             key="login_password",
         )
 
-        remember_me = st.checkbox(
-            "☑️ تذكرني",
-            key="login_remember",
-        )
 
         st.write("")
 
@@ -755,7 +748,6 @@ def render_login_page() -> None:
             success, message = login_user(
                 login_identifier=login_identifier,
                 password=login_password,
-                remember_me=remember_me,
             )
 
             if success:
