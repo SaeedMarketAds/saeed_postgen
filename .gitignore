@@ -5,3 +5,6 @@ __pycache__/
 *.bak
 *.backup
 .saeed_postgen_runtime/
+data/postgen.db
+data/*.db
+data/*.safety-backup
