@@ -1753,13 +1753,16 @@ def page_design() -> None:
                 else ""
             )
 
-            product_image = (
-                absolute_path(
-                    uploaded_path
-                )
+            product_path = (
+                absolute_path(uploaded_path)
                 if uploaded_path
                 else None
             )
+
+            product_image = None
+            if product_path:
+                with Image.open(product_path) as source_image:
+                    product_image = source_image.convert("RGB")
 
             result = generate_ad_card(
                 product_name=product_name,
