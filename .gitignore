@@ -8,3 +8,8 @@ __pycache__/
 data/postgen.db
 data/*.db
 data/*.safety-backup
+
+# PostGen API
+test_ad_card.png
+.env
+*.backup-*
