@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 
 from core.engines import generate_ad_card
+from core.ai_ads import generate_ai_ad
 
 app = FastAPI(
     title="Saeed PostGen API",
@@ -115,6 +116,75 @@ def create_ad_card(
 
         output_path = Path(result["path"])
 
+        image_buffer = io.BytesIO()
+        image.save(image_buffer, format="PNG")
+
+        return Response(
+            content=image_buffer.getvalue(),
+            media_type="image/png",
+            headers={
+                "X-PostGen-Status": str(result.get("status", "SUCCESS")),
+            },
+        )
+
+    finally:
+        if output_path is not None:
+            output_path.unlink(missing_ok=True)
+
+
+class AIAdRequest(BaseModel):
+    prompt: str = Field(min_length=5, max_length=1500)
+    product_name: str = Field(default="", max_length=200)
+    price: str = Field(default="", max_length=100)
+    specifications: str = Field(default="", max_length=1000)
+    contact: str = Field(default="", max_length=200)
+    brand: str = Field(default="SaeedMarketAds", max_length=100)
+    template: str = Field(default="gold", max_length=30)
+    width: int = Field(default=1080)
+    height: int = Field(default=1350)
+
+
+@app.post("/v1/ai-ad")
+def create_ai_ad(
+    request: AIAdRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+):
+    verify_api_key(x_api_key)
+
+    filename = f"ai_api_{uuid.uuid4().hex}.png"
+    output_path = None
+
+    try:
+        result = generate_ai_ad(
+            prompt=request.prompt,
+            product_name=request.product_name,
+            price=request.price,
+            specifications=request.specifications,
+            contact=request.contact,
+            brand=request.brand,
+            template=request.template,
+            width=request.width,
+            height=request.height,
+            filename=filename,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "status": result.get("status"),
+                    "message": result.get("message"),
+                },
+            )
+
+        image = result.get("image")
+        if image is None:
+            raise HTTPException(
+                status_code=500,
+                detail="AI ad engine returned no image.",
+            )
+
+        output_path = Path(result["path"])
         image_buffer = io.BytesIO()
         image.save(image_buffer, format="PNG")
 

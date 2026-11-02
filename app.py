@@ -171,10 +171,6 @@ APP_NAME = "Saeed PostGen"
 VERSION = "4.6"
 BRAND = "SaeedMarketAds"
 
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash",
-)
 
 TEMPLATES = [
     "ذهبي فاخر",
@@ -824,70 +820,8 @@ def save_generated_result(
 
 
 # ================================================================
-# GEMINI
 # ================================================================
 
-def gemini_generate(
-    prompt: str,
-) -> tuple[bool, str]:
-
-    key = (
-        os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-    )
-
-    if not key:
-
-        try:
-            key = st.secrets.get(
-                "GEMINI_API_KEY",
-                "",
-            )
-        except Exception:
-            key = ""
-
-    if not key:
-        return (
-            False,
-            "لم يتم ضبط GEMINI_API_KEY أو GOOGLE_API_KEY.",
-        )
-
-    try:
-
-        from google import genai
-
-        client = genai.Client(
-            api_key=key
-        )
-
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-
-        text = getattr(
-            response,
-            "text",
-            None,
-        )
-
-        if not text:
-            return (
-                False,
-                "Gemini لم يرجع نصًا.",
-            )
-
-        return (
-            True,
-            str(text),
-        )
-
-    except Exception as exc:
-
-        return (
-            False,
-            f"خطأ Gemini: {exc}",
-        )
 
 
 # ================================================================
@@ -2010,66 +1944,8 @@ def page_design() -> None:
 
 
 # ================================================================
-# PAGE — AI
 # ================================================================
 
-def page_ai() -> None:
-
-    render_header(
-        "Saeed AI Assistant",
-        "مساعد نصي للتجربة فقط؛ لا يمثل عقل Saeed LogiC النهائي.",
-    )
-
-    if "ai_messages" not in st.session_state:
-
-        st.session_state.ai_messages = []
-
-    for msg in st.session_state.ai_messages:
-
-        with st.chat_message(
-            msg["role"]
-        ):
-
-            st.markdown(
-                msg["content"]
-            )
-
-    prompt = st.chat_input(
-        "اكتب طلبك التسويقي أو فكرة التصميم..."
-    )
-
-    if prompt:
-
-        st.session_state.ai_messages.append(
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        )
-
-        ok, answer = gemini_generate(
-            "أنت مساعد تسويق عربي لمنصة Saeed PostGen. "
-            "حلل الطلب واقترح نوع المحتوى والعنوان والوصف والتصميم "
-            "دون الادعاء أنك نفذت التصميم.\n\n"
-            + prompt
-        )
-
-        if not ok:
-
-            answer = (
-                answer
-                + "\n\n"
-                "يمكنك استخدام صفحة التصميم مباشرة لتنفيذ المحتوى يدويًا."
-            )
-
-        st.session_state.ai_messages.append(
-            {
-                "role": "assistant",
-                "content": answer,
-            }
-        )
-
-        st.rerun()
 
 
 # ================================================================
@@ -2506,7 +2382,6 @@ def main() -> None:
                 "🏪 هوية المتجر",
                 "📦 المنتجات",
                 "🎨 التصميم",
-                "🤖 Saeed AI",
                 "🎙️ الصوت",
                 "📢 الحملات",
                 "🖼️ المعرض",
@@ -2601,10 +2476,6 @@ def main() -> None:
     elif page == "🎨 التصميم":
 
         page_design()
-
-    elif page == "🤖 Saeed AI":
-
-        page_ai()
 
     elif page == "🎙️ الصوت":
 

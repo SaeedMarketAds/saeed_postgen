@@ -16,6 +16,8 @@ from urllib.parse import quote
 
 import requests
 from PIL import Image, ImageDraw, ImageFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 from core.content_guard import check_content
 import tempfile
